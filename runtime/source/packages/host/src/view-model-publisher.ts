@@ -171,11 +171,8 @@ export class ViewModelPublisher {
   async recoverVisibleTargets(): Promise<
     readonly { readonly targetId: string; readonly threadId: string | null }[]
   > {
-    let recovered: readonly { readonly targetId: string; readonly threadId: string | null }[] = [];
-    await this.#enqueue(async () => {
-      recovered = await this.#recoverTargets();
-    });
-    return recovered;
+    // Discovery can wait for an application launch; it must not occupy the delivery queue.
+    return this.#recoverTargets();
   }
 
   async recoverVisibleThreadId(): Promise<string | undefined> {
@@ -462,18 +459,17 @@ export class ViewModelPublisher {
   }
 
   async close(options?: ViewModelPublisherCloseOptions): Promise<void> {
-    return this.#enqueue(async () => {
-      const sink = this.#sink;
-      this.#sink = undefined;
-      this.#targetDelivery.clear();
-      this.#threadSnapshots.clear();
-      this.#deliveredFingerprint = undefined;
-      try {
-        await sink?.close?.(options);
-      } catch {
-        // Renderer transport shutdown cannot block Helper shutdown.
-      }
-    });
+    // Cancel the transport before waiting on deliveries, which may be waiting on that transport.
+    const sink = this.#sink;
+    this.#sink = undefined;
+    this.#targetDelivery.clear();
+    this.#threadSnapshots.clear();
+    this.#deliveredFingerprint = undefined;
+    try {
+      await sink?.close?.(options);
+    } catch {
+      // A disconnected renderer must not prevent core shutdown.
+    }
   }
 
   #enqueue(work: () => Promise<void>): Promise<void> {
@@ -505,8 +501,9 @@ export class ViewModelPublisher {
   async #recoverTargets(): Promise<
     readonly { readonly targetId: string; readonly threadId: string | null }[]
   > {
+    const sink = this.#sink;
     const recovered =
-      (await this.#sink?.recoverVisibleTargets?.()) ??
+      (await sink?.recoverVisibleTargets?.()) ??
       (this.#sink?.recoverVisibleThreadId
         ? [
             {
@@ -515,6 +512,7 @@ export class ViewModelPublisher {
             },
           ]
         : []);
+    if (this.#sink !== sink) return [];
     for (const target of recovered) {
       this.#targetDelivery.set(target.targetId, {
         targetId: target.targetId,

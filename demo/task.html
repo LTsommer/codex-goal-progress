@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>普通任务进度 · 本地验收</title>
+<style>body{font:15px system-ui;margin:0;background:#f7f7f8;color:#222}main{max-width:780px;margin:8vh auto;padding:24px}h1{font-size:28px}p{line-height:1.7;color:#666}button,select{font:inherit;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:white;margin-right:8px}.composer{position:fixed;bottom:24px;left:15%;right:15%;min-height:85px;background:white;border:1px solid #ddd;border-radius:16px;padding:16px;box-sizing:border-box}.native-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}.native-row[hidden]{display:none}.native-row>button{width:65%;text-align:left}.native-row>div{display:flex}.native-row>div button{width:36px;padding:8px}.composer textarea{box-sizing:border-box;width:100%;resize:none;font:inherit;color:inherit;background:transparent;border:0;min-height:48px}#result{white-space:pre-wrap;font-size:12px}</style>
+</head>
+<body>
+<main>
+<h1>无需 Goal，也能看见任务进展</h1>
+<p>本地样例通过真实 SidecarMountController 挂载真实 Lit 组件；普通任务没有原生 Goal 锚点，另有原生 Goal 回归样例。保存的布局偏好是 inline。切换状态检查探索与清单、暂停、完成及中英文显示。</p>
+<select id="mode">
+<option value="exploration">探索中</option>
+<option value="checklist">清单已明确</option>
+<option value="paused">已暂停</option>
+<option value="completed">已完成</option>
+<option value="native">原生 Goal 回归</option>
+</select>
+<button type="button" id="locale">English / 中文</button>
+<button type="button" id="remount">首次挂载</button>
+<pre id="result">
+</pre>
+</main>
+<div class="composer" data-codex-composer-root>
+<div id="native-goal" class="native-row" hidden>
+<button type="button" aria-label="Goal">
+<span aria-hidden="true">◎</span>
+<span>排查页面加载缓慢的原因</span>
+<span aria-hidden="true">⌄</span>
+</button>
+<div>
+<button type="button" aria-label="Pause goal">Ⅱ</button>
+<button type="button" aria-label="Goal menu">⋯</button>
+</div>
+</div>
+<textarea data-codex-composer readonly aria-label="普通对话输入框 · 样例不会发送消息">普通对话输入框 · 样例不会发送消息</textarea>
+</div>
+<script type="module" src="../dist/demo/task-demo.js">
+</script>
+</body>
+</html>

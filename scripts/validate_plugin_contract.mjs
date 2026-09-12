@@ -221,8 +221,10 @@ async function validateSkill(skillRoot, directoryName) {
     new Set(["allow_implicit_invocation"]),
     `${label} agent policy`,
   );
-  if (agent.policy?.allow_implicit_invocation !== false) {
-    errors.push(`${label} must set policy.allow_implicit_invocation to false`);
+  if (agent.policy?.allow_implicit_invocation !== true) {
+    errors.push(
+      `${label} must allow natural-language Skill discovery; explicit tracking consent is enforced by the Skill`,
+    );
   }
 }
 
@@ -485,7 +487,7 @@ if (manifest) {
     validateHookEvent(
       hookEvents,
       "PreToolUse",
-      "^(?:goal_progress_|.*[^A-Za-z0-9]goal_progress[^A-Za-z0-9]+goal_progress_)(?:activate|initialize|get|update|rescope|set_phase)$",
+      "^(?:goal_progress_|.*[^A-Za-z0-9]goal_progress[^A-Za-z0-9]+goal_progress_)(?:activate|initialize|get|update|explore|rescope|set_phase)$",
       undefined,
       1,
       undefined,

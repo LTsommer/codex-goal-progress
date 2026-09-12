@@ -9,6 +9,7 @@ import { renderCurrentSummary } from "./current-summary.js";
 import { renderNotices } from "./notices.js";
 import { type ObjectiveListRenderOptions, renderObjectiveLists } from "./objective-list.js";
 import { renderOverallProgress } from "./overall-progress.js";
+import { renderTaskDetails, taskLabels } from "./task.js";
 
 export interface TrackingRenderOptions extends ObjectiveListRenderOptions {
   readonly collapsed: boolean;
@@ -55,8 +56,9 @@ function renderDetails(viewModel: GoalProgressViewModel, options: TrackingRender
     !options.updatePromptDismissed;
   return html`
     <div class="content ${externalUpdatePhase ? "has-update-prompt" : ""}">
-      ${renderCurrentSummary(viewModel, options.messages)}
-      ${renderObjectiveLists(viewModel, options)}
+      ${viewModel.task ? renderTaskDetails(viewModel, options.locale) : null}
+      ${!viewModel.task || viewModel.overallPercent !== null ? renderCurrentSummary(viewModel, options.messages) : null}
+      ${viewModel.task && viewModel.overallPercent === null ? null : renderObjectiveLists(viewModel, options)}
       ${renderNotices(viewModel, options.messages)}
       ${renderCompletionFooter(viewModel, options)}
     </div>
@@ -67,10 +69,25 @@ export function renderTrackingView(
   viewModel: GoalProgressViewModel,
   options: TrackingRenderOptions,
 ) {
+  if (viewModel.task) {
+    const labels = taskLabels(options.locale);
+    options = {
+      ...options,
+      messages: {
+        ...options.messages,
+        overallLabel: labels.title,
+        expandProgress: labels.expand,
+        collapseProgress: labels.collapse,
+        overallProgress: labels.title,
+        floatingProgress: labels.title,
+        goalCompleted: labels.completed,
+      },
+    };
+  }
   if (options.placement === "floating") {
     return html`
       <div
-        class="floating-shell"
+        class="floating-shell ${viewModel.task ? "task-shell" : ""}"
         @pointerdown=${options.onFloatingPointerDown}
         @pointermove=${options.onFloatingPointerMove}
         @pointerup=${options.onFloatingPointerUp}
@@ -82,7 +99,7 @@ export function renderTrackingView(
             : html`<div class="floating-panel">${renderDetails(viewModel, options)}</div>`
         }
         <div
-          class="floating-chip"
+          class="floating-chip ${viewModel.task ? "task-chip" : ""}"
           role="group"
           aria-label=${options.messages.floatingProgress}
           tabindex="0"
@@ -97,6 +114,7 @@ export function renderTrackingView(
             showUpdateUnread:
               options.updateUnread && (options.collapsed || options.floatingPanelConstrained),
             messages: options.messages,
+            locale: options.locale,
           })}
         </div>
       </div>
@@ -112,6 +130,7 @@ export function renderTrackingView(
             onToggleCollapsed: options.onToggleCollapsed,
             showUpdateUnread: options.updateUnread,
             messages: options.messages,
+            locale: options.locale,
           })
         : html`
           ${renderDetails(viewModel, options)}
@@ -120,6 +139,7 @@ export function renderTrackingView(
             collapsed: false,
             onToggleCollapsed: options.onToggleCollapsed,
             messages: options.messages,
+            locale: options.locale,
           })}
         `
     }

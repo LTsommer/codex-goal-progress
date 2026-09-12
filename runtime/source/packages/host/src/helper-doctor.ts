@@ -340,11 +340,14 @@ export async function inspectGoalProgressRuntime(
   if (sessionId) {
     const loaded = await dependencies.store.load(sessionId).catch(() => null);
     const contract = loaded?.contract;
-    if (contract?.schemaVersion === 2) {
+    if (contract?.schemaVersion === 2 && contract.task) {
+      actualThreadProven = contract.threadId === sessionId && contract.sessionId === sessionId;
+      tokenAvailability = "unavailable";
+    } else if (contract?.schemaVersion === 2) {
       actualThreadProven =
         contract.threadId === sessionId &&
         contract.sessionId === sessionId &&
-        contract.nativeGoalBinding.threadId === sessionId;
+        contract.nativeGoalBinding?.threadId === sessionId;
       const usage = await dependencies.refreshUsage(sessionId);
       tokenAvailability =
         usage?.tokenUsage.availability === "available"

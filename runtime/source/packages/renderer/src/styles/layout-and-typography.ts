@@ -1,6 +1,13 @@
 import { css } from "lit";
 
 export const layoutAndTypographyStyles = css`
+    .task-details { overflow-wrap: anywhere; max-height: 300px; overflow-y: auto; }
+    .task-title { display: block; margin-bottom: 12px; }
+    .task-section { margin-top: 14px; line-height: 1.6; }
+    .task-section ul { margin: 5px 0 0; padding-left: 20px; }
+    .task-section p { margin: 5px 0 0; color: var(--gp-muted); }
+    .floating-chip.task-chip { width: min(320px, calc(100% - 20px)); }
+
     :host {
       display: block;
       min-width: 0;

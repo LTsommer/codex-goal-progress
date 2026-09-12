@@ -21,11 +21,11 @@ export function renderCompletionFooter(
   return html`
     <footer class="completion-footer">
       <span class="completion-count">
-        ${options.messages.completionCount(completedCount, viewModel.objectives.length)}
+        ${viewModel.task && viewModel.overallPercent === null ? "" : options.messages.completionCount(completedCount, viewModel.objectives.length)}
       </span>
       <span class="footer-actions">
-        ${renderTokenUsage(viewModel.token, options.messages, options.locale)}
-        ${renderDisplaySettingsMenu(options)}
+        ${viewModel.task ? null : renderTokenUsage(viewModel.token, options.messages, options.locale)}
+        ${renderDisplaySettingsMenu({ ...options, hidePlacementSettings: Boolean(viewModel.task) })}
       </span>
     </footer>
   `;

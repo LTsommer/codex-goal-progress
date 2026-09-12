@@ -75,6 +75,14 @@ export const placementStyles = css`
       display: none;
     }
 
+    .floating-chip .task-exploration .overall-label {
+      display: inline-flex;
+    }
+
+    .floating-chip .task-exploration .overall-rail {
+      grid-template-columns: 1fr auto 24px;
+    }
+
     .floating-chip .overall-track {
       overflow: visible;
       height: 6px;
@@ -140,6 +148,8 @@ export const placementStyles = css`
       transform: translateX(-50%);
       user-select: none;
     }
+
+    .task-shell .floating-panel { width: min(420px, calc(100% - 20px)); }
 
     .floating-panel .content {
       gap: var(--gp-objective-list-gap);

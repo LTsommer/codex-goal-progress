@@ -20,6 +20,7 @@ import type { GoalProgressMessages } from "../locale.js";
 import { renderUpdatePrompt } from "./update-prompt.js";
 
 export interface DisplaySettingsMenuRenderOptions {
+  readonly hidePlacementSettings?: boolean;
   readonly motionPaused: boolean;
   readonly onCheckUpdate: () => void;
   readonly onOpenCurrentRelease: () => void;
@@ -214,7 +215,10 @@ export function renderDisplaySettingsMenu(options: DisplaySettingsMenuRenderOpti
                 ><span class="motion-switch-knob"></span></span>
               </button>
               <span class="update-menu-block-divider" aria-hidden="true"></span>
-              <span class="update-menu-section-title">${options.messages.displaySettings}</span>
+              ${
+                options.hidePlacementSettings
+                  ? nothing
+                  : html`<span class="update-menu-section-title">${options.messages.displaySettings}</span>
               <button
                 type="button"
                 role="menuitemradio"
@@ -250,7 +254,8 @@ export function renderDisplaySettingsMenu(options: DisplaySettingsMenuRenderOpti
                       : nothing
                   }
                 </span>
-              </button>
+              </button>`
+              }
             </span>
           `
           : nothing

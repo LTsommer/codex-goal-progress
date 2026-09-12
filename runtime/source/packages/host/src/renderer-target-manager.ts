@@ -91,12 +91,19 @@ export class RendererTargetManager implements ViewModelPublisherSink {
   #removeDestroyedListener: (() => void) | undefined;
   #removeFailureListener: (() => void) | undefined;
   #sourceRecovery: Promise<void> | undefined;
+  #starting: Promise<void> | undefined;
+  #cancelStart: (() => void) | undefined;
+  #cancelOperations: (() => void) | undefined;
+  readonly #cancelled = new Promise<never>((_, reject) => {
+    this.#cancelOperations = () => reject(new Error("RENDERER_TARGET_MANAGER_CLOSED"));
+  });
   #uiPreference: GoalProgressUiPreference = DEFAULT_GOAL_PROGRESS_UI_PREFERENCE;
   #updateState: GoalProgressUpdateState | null = null;
   #closed = false;
   #queue: Promise<void> = Promise.resolve();
 
   constructor(options: RendererTargetManagerOptions) {
+    void this.#cancelled.catch(() => undefined);
     this.#connector = options.connector;
     this.#onTargetReady = options.onTargetReady;
     this.#onTargetDestroyed = options.onTargetDestroyed;
@@ -140,30 +147,58 @@ export class RendererTargetManager implements ViewModelPublisherSink {
   }
 
   async start(): Promise<void> {
-    await this.#enqueue(async () => {
-      if (this.#closed || this.#source) {
-        return;
-      }
-      const source = await this.#connector();
-      if (!source) {
-        throw new Error("RENDERER_TARGET_SOURCE_UNAVAILABLE");
-      }
-      this.#source = source;
-      this.#removeInfoListener = source.onTargetInfo((target) => {
-        void this.#enqueue(() => this.#connectTarget(target));
-      });
-      this.#removeDestroyedListener = source.onTargetDestroyed((targetId) => {
-        void this.#enqueue(() =>
-          this.#destroyTarget(targetId, true, "GOAL_PROGRESS_CDP_TARGET_DESTROYED"),
-        );
-      });
-      this.#removeFailureListener = source.onFailure?.((error) => {
-        this.#beginSourceRecovery(source, error);
-      });
-      for (const target of source.initialTargets) {
-        await this.#connectTarget(target);
-      }
+    if (this.#closed || this.#source) return;
+    if (this.#starting) return this.#starting;
+    const pending = this.#connector();
+    let expired = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unavailable = new Promise<never>((_, reject) => {
+      this.#cancelStart = () => {
+        expired = true;
+        reject(new Error("RENDERER_TARGET_SOURCE_UNAVAILABLE"));
+      };
+      timer = setTimeout(this.#cancelStart, 5_000);
+      timer.unref();
     });
+    void pending.then(
+      (source) => {
+        if (expired || this.#closed) void source?.close().catch(() => undefined);
+      },
+      () => undefined,
+    );
+    const starting = (async () => {
+      const source = await Promise.race([pending, unavailable]);
+      if (!source || this.#closed) throw new Error("RENDERER_TARGET_SOURCE_UNAVAILABLE");
+      await this.#enqueue(async () => {
+        if (this.#closed) {
+          await source.close();
+          return;
+        }
+        this.#source = source;
+        this.#removeInfoListener = source.onTargetInfo((target) => {
+          void this.#enqueue(() => this.#connectTarget(target));
+        });
+        this.#removeDestroyedListener = source.onTargetDestroyed((targetId) => {
+          void this.#enqueue(() =>
+            this.#destroyTarget(targetId, true, "GOAL_PROGRESS_CDP_TARGET_DESTROYED"),
+          );
+        });
+        this.#removeFailureListener = source.onFailure?.((error) => {
+          this.#beginSourceRecovery(source, error);
+        });
+        for (const target of source.initialTargets) {
+          await this.#connectTarget(target);
+        }
+      });
+    })();
+    this.#starting = starting;
+    try {
+      await starting;
+    } finally {
+      clearTimeout(timer);
+      this.#cancelStart = undefined;
+      this.#starting = undefined;
+    }
   }
 
   async settle(): Promise<void> {
@@ -358,14 +393,17 @@ export class RendererTargetManager implements ViewModelPublisherSink {
   }
 
   async close(options?: ViewModelPublisherCloseOptions): Promise<void> {
-    await this.#enqueue(async () => {
-      this.#closed = true;
-      await this.#closeSourceAndTargets(options?.preservePage === true);
-    });
+    this.#closed = true;
+    this.#cancelStart?.();
+    this.#cancelOperations?.();
+    await this.#closeSourceAndTargets(options?.preservePage === true);
   }
 
   #enqueue(work: () => Promise<void>): Promise<void> {
-    const run = this.#queue.then(work, work);
+    const run = this.#queue.then(() => {
+      if (this.#closed) throw new Error("RENDERER_TARGET_MANAGER_CLOSED");
+      return Promise.race([work(), this.#cancelled]);
+    });
     this.#queue = run.catch(() => undefined);
     return run;
   }
@@ -400,11 +438,17 @@ export class RendererTargetManager implements ViewModelPublisherSink {
     this.#targets.set(info.targetId, target);
     try {
       const bridge = await source.connectTarget(info);
+      if (this.#closed || this.#source !== source || this.#targets.get(info.targetId) !== target) {
+        await bridge.close();
+        return;
+      }
       target.bridge = bridge;
       await bridge.clear();
       target.visibleThreadId = (await bridge.recoverVisibleThreadId?.()) ?? null;
+      if (this.#closed || target.closed) return;
       await bridge.setUiPreference?.(this.#uiPreference);
       await bridge.setUpdateState?.(this.#updateState);
+      if (this.#closed || target.closed) return;
       await this.#onTargetReady?.(
         info.targetId,
         target.visibleThreadId,
@@ -515,10 +559,23 @@ export class RendererTargetManager implements ViewModelPublisherSink {
     this.#removeFailureListener = undefined;
     for (const targetId of this.targetIds()) {
       if (!preservePage) {
-        await this.#targets
+        const clearing = this.#targets
           .get(targetId)
           ?.bridge?.clear()
           .catch(() => undefined);
+        if (this.#closed) {
+          // Give a responsive page one bounded chance to clear, then close its transport.
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            clearing,
+            new Promise<void>((resolve) => {
+              timer = setTimeout(resolve, 250);
+            }),
+          ]);
+          clearTimeout(timer);
+        } else {
+          await clearing;
+        }
       }
       await this.#destroyTarget(targetId, notifyCode !== undefined, notifyCode);
     }

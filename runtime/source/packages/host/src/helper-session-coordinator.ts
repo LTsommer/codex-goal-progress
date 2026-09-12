@@ -11,14 +11,17 @@ import {
   type GoalContract,
   type GoalContractAny,
   type GoalContractInitialization,
-  type GoalEvidence,
-  type GoalObjective,
   type RuntimeContext,
   type RuntimeIdentity,
   type RuntimeProof,
   type ThreadGoal,
 } from "../../contracts/src/index.js";
-import { hashNativeGoalObjective, migrateGoalContractV1ToV2 } from "../../core/src/index.js";
+import {
+  createTaskContract,
+  hashNativeGoalObjective,
+  migrateGoalContractV1ToV2,
+  sanitizeModelObjective,
+} from "../../core/src/index.js";
 import {
   type CodexRequestIdentity,
   type GoalProgressIpcAuthorization,
@@ -134,54 +137,9 @@ export async function writeGoalProgressActivationState(
   return parsed;
 }
 
-export function sanitizeModelEvidence(evidence: GoalEvidence): GoalEvidence {
-  return {
-    ...evidence,
-    source: "model",
-    verification: "reported",
-  };
-}
-
-export function sanitizeModelObjective(
-  objective: GoalObjective,
-  previous?: GoalObjective,
-): GoalObjective {
-  const sameResult = (
-    next: { id: string; title: string; status: string },
-    stored?: { id: string; title: string; status: string },
-  ) =>
-    stored !== undefined &&
-    next.id === stored.id &&
-    next.title === stored.title &&
-    next.status === stored.status;
-  const previousItems = new Map(
-    (previous?.id === objective.id ? previous.items : []).map((item) => [item.id, item]),
-  );
-  const unchanged =
-    sameResult(objective, previous) &&
-    previous?.items.length === objective.items.length &&
-    objective.items.every((item) => sameResult(item, previousItems.get(item.id)));
-  return {
-    ...objective,
-    // A rescope copies existing facts; only changed results bring new model reports.
-    evidence:
-      unchanged && previous ? previous.evidence : objective.evidence.map(sanitizeModelEvidence),
-    items: objective.items.map((item) => {
-      const stored = previousItems.get(item.id);
-      return {
-        ...item,
-        evidence:
-          sameResult(item, stored) && stored
-            ? stored.evidence
-            : item.evidence.map(sanitizeModelEvidence),
-      };
-    }),
-  };
-}
-
 function mapNativeGoalStatus(
   status: TrustedNativeGoal["status"],
-): GoalContract["nativeGoal"]["status"] {
+): NonNullable<GoalContract["nativeGoal"]>["status"] {
   if (status === "complete") {
     return "complete";
   }
@@ -196,7 +154,7 @@ function mapNativeGoalStatus(
 
 function mapNativeGoalBlockedReason(
   status: TrustedNativeGoal["status"],
-): GoalContract["nativeGoal"]["blockedReason"] {
+): NonNullable<GoalContract["nativeGoal"]>["blockedReason"] {
   if (status === "usageLimited") {
     return "usage-limit";
   }
@@ -206,7 +164,9 @@ function mapNativeGoalBlockedReason(
   return status === "blocked" ? "native-goal" : undefined;
 }
 
-export function contractNativeGoal(nativeGoal: TrustedNativeGoal): GoalContract["nativeGoal"] {
+export function contractNativeGoal(
+  nativeGoal: TrustedNativeGoal,
+): NonNullable<GoalContract["nativeGoal"]> {
   const blockedReason = mapNativeGoalBlockedReason(nativeGoal.status);
   return {
     objective: nativeGoal.objective,
@@ -220,23 +180,29 @@ export function contractNativeGoal(nativeGoal: TrustedNativeGoal): GoalContract[
 
 export function createModelContract(
   initialization: GoalContractInitialization,
-  nativeGoal: TrustedNativeGoal,
+  nativeGoal: TrustedNativeGoal | null,
   identity: RuntimeIdentity,
   occurredAt: string,
 ): GoalContract {
-  const nativeGoalStatus = mapNativeGoalStatus(nativeGoal.status);
+  if (nativeGoal === null && initialization.task) {
+    return createTaskContract(initialization, identity, occurredAt);
+  }
+  const nativeGoalStatus = nativeGoal ? mapNativeGoalStatus(nativeGoal.status) : "active";
   return {
     schemaVersion: 2,
     contractId: initialization.contractId,
     sessionId: identity.threadId,
     sessionTreeId: identity.sessionTreeId,
     threadId: identity.threadId,
-    nativeGoalBinding: {
-      threadId: identity.threadId,
-      createdAt: nativeGoal.createdAt,
-      objectiveHash: hashNativeGoalObjective(nativeGoal.objective),
-    },
-    nativeGoal: contractNativeGoal(nativeGoal),
+    nativeGoalBinding: nativeGoal
+      ? {
+          threadId: identity.threadId,
+          createdAt: nativeGoal.createdAt,
+          objectiveHash: hashNativeGoalObjective(nativeGoal.objective),
+        }
+      : null,
+    nativeGoal: nativeGoal ? contractNativeGoal(nativeGoal) : null,
+    ...(initialization.task ? { task: initialization.task } : {}),
     phase: nativeGoalStatus === "paused" ? "paused" : "active",
     revision: 1,
     scopeRevision: 0,
@@ -272,7 +238,7 @@ export function assertBoundNativeGoal(
   nativeGoal: TrustedNativeGoal | null,
   revision: number | null,
 ): TrustedNativeGoal {
-  if (!nativeGoal) {
+  if (!nativeGoal || !contract.nativeGoalBinding) {
     throw new GoalProgressIpcHandlerError(
       "NATIVE_GOAL_DETACHED",
       "Native Goal is missing; do not keep writing the previous Contract",

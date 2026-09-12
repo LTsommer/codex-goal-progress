@@ -71,6 +71,7 @@ export interface GoalInitializationMetadata {
 }
 
 export interface GoalReplacementExpectation {
+  readonly previousDetached?: boolean;
   readonly contractId: string;
   readonly revision: number;
 }
@@ -355,8 +356,20 @@ function eventMatchesCommand(event: GoalProgressEvent, command: GoalProgressComm
       JSON.stringify(event.payload.objectives) === JSON.stringify(command.objectives)
     );
   }
+  if (command.type === "update-exploration") {
+    return (
+      event.type === "contract.exploration-updated" &&
+      event.payload.currentStep === command.currentStep &&
+      JSON.stringify(event.payload.findings) === JSON.stringify(command.findings) &&
+      JSON.stringify(event.payload.openQuestions) === JSON.stringify(command.openQuestions)
+    );
+  }
   if (command.type === "set-phase") {
-    return event.type === "contract.phase-changed" && event.payload.phase === command.phase;
+    return (
+      event.type === "contract.phase-changed" &&
+      event.payload.phase === command.phase &&
+      JSON.stringify(event.payload.verification) === JSON.stringify(command.verification)
+    );
   }
   return (
     event.type === "native-goal.synced" &&
@@ -369,7 +382,9 @@ function eventMatchesInitialization(
   contract: GoalContractAny,
   metadata: GoalInitializationMetadata,
 ): boolean {
-  if (event.type !== "contract.initialized") {
+  // Initialization retries can refer to a replacement that already committed.
+  // This only recognizes a matching persisted request; it cannot authorize a new replacement.
+  if (event.type !== "contract.initialized" && event.type !== "contract.replaced") {
     return false;
   }
   const {
@@ -407,6 +422,7 @@ function eventMatchesReplacement(
     event.source === metadata.source &&
     event.payload.previousContractId === previous.contractId &&
     event.payload.previousRevision === previous.revision &&
+    Boolean(event.payload.previousDetached) === Boolean(previous.previousDetached) &&
     JSON.stringify(event.payload.contract) === JSON.stringify(contract)
   );
 }
@@ -663,6 +679,7 @@ export class GoalEventStore {
         payload: {
           previousContractId: previous.contractId,
           previousRevision: previous.revision,
+          ...(previous.previousDetached ? { previousDetached: true } : {}),
           contract,
         },
       });

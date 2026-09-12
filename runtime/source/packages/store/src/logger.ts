@@ -10,11 +10,13 @@ const GoalProgressLogEntrySchema = z
     level: z.enum(["info", "warn", "error"]),
     event: z.enum([
       "helper.started",
+      "helper.ui.unavailable",
       "helper.stopped",
       "startup.listener.started",
       "startup.listener.stopped",
       "startup.event",
       "startup.handoff",
+      "startup.ui-recovery",
       "update.activation",
       "update.cleanup.failed",
       "store.initialized",

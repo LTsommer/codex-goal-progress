@@ -34,6 +34,7 @@ export const GoalProgressMcpToolNameSchema = z.enum([
   "goal_progress_initialize",
   "goal_progress_get",
   "goal_progress_update",
+  "goal_progress_explore",
   "goal_progress_rescope",
   "goal_progress_set_phase",
 ]);
@@ -56,9 +57,12 @@ export const GoalProgressIpcAuthorizationSchema = z.discriminatedUnion("kind", [
 ]);
 
 const ActivationPlanParamsSchema = z.union([
-  z.object({ auth: GoalProgressIpcAuthorizationSchema }).strict(),
+  z
+    .object({ auth: GoalProgressIpcAuthorizationSchema, mode: z.enum(["goal", "task"]).optional() })
+    .strict(),
   z
     .object({
+      mode: z.enum(["goal", "task"]).optional(),
       runtimeContext: RuntimeContextSchema,
       runtimeProof: RuntimeProofSchema,
     })
@@ -69,12 +73,22 @@ const StoreLoadParamsSchema = z.union([
   z
     .object({
       sessionId: z.string().trim().min(1).max(256),
+      cursor: z
+        .string()
+        .regex(/^\d+:\d+$/u)
+        .max(64)
+        .optional(),
       auth: GoalProgressIpcAuthorizationSchema,
     })
     .strict(),
   z
     .object({
       sessionId: z.string().trim().min(1).max(256),
+      cursor: z
+        .string()
+        .regex(/^\d+:\d+$/u)
+        .max(64)
+        .optional(),
       runtimeContext: RuntimeContextSchema,
       runtimeProof: RuntimeProofSchema,
     })

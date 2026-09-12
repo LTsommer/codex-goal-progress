@@ -1,7 +1,7 @@
 {
   "name": "codex-goal-progress",
-  "version": "0.3.7",
-  "description": "Explicitly attach deterministic progress tracking to one native Codex Goal.",
+  "version": "0.3.7+codex.20260911174847",
+  "description": "Explicitly track an ordinary task or native Codex Goal with local progress.",
   "author": {
     "name": "Codex Goal Progress Contributors"
   },
@@ -10,8 +10,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Goal Progress",
-    "shortDescription": "Track one native Goal with verified progress.",
-    "longDescription": "Adds an explicit, checklist-based progress Contract to the current native Codex Goal while local Core code computes every percentage.",
+    "shortDescription": "Track tasks from exploration to verified outcomes.",
+    "longDescription": "Tracks ordinary tasks without creating a Goal: capture exploration, define acceptance outcomes, and restore progress across turns. Native Goal tracking remains supported.",
     "developerName": "Codex Goal Progress Contributors",
     "category": "Productivity",
     "logo": "./assets/codex-goal-progress-plugin-logo.png",

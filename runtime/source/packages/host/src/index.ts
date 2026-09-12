@@ -13,6 +13,7 @@ import {
   type PrepareGoalProgressUpdateOptions,
   requireSingleCodexMacosApp,
 } from "../../../platform/macos/src/index.js";
+import { readStartupRecoveryConsent } from "../../../platform/macos/src/startup-consent.js";
 import {
   type CodexAppServerRuntime,
   createCodexAppServerRuntime,
@@ -43,6 +44,7 @@ import {
   type ProjectViewModelOptions,
   planGoalProgressActivation,
   projectGoalProgressViewModel,
+  sanitizeModelCommand,
 } from "../../core/src/index.js";
 import {
   consumeRuntimeProofOnce,
@@ -108,14 +110,13 @@ import {
   type ResolveCurrentThread,
   readGoalProgressActivationState,
   readGoalProgressActivationStateSnapshot,
-  sanitizeModelEvidence,
-  sanitizeModelObjective,
   type TrustedNativeGoal,
   trustedNativeGoalFromThreadGoal,
   writeGoalProgressActivationState,
 } from "./helper-session-coordinator.js";
 import { handleHelperUiIntent } from "./helper-ui-intent.js";
 import { connectHelperRendererTargetSource } from "./renderer-bridge-runtime.js";
+import { retryableBridgeError } from "./renderer-bridge-supervisor.js";
 import { RendererTargetManager } from "./renderer-target-manager.js";
 import {
   type GoalProgressStartupListener,
@@ -126,6 +127,7 @@ import {
   MacosStartupListenerSupervisor,
   resolveStartupListenerExecutable,
 } from "./startup-listener.js";
+import { taskRecoveryPage } from "./task-recovery.js";
 import {
   GoalProgressUpdateCoordinator,
   type GoalProgressUpdateIntentResult,
@@ -291,35 +293,6 @@ function projectContractState(
   return { viewModel, nextTargetId: item?.id ?? objectiveView.id };
 }
 
-function sanitizeModelCommand(
-  command: GoalProgressCommand,
-  previous?: GoalContract,
-): GoalProgressCommand {
-  if (command.type === "update-items") {
-    return {
-      ...command,
-      source: "model",
-      changes: command.changes.map((change) => ({
-        ...change,
-        ...(change.evidence ? { evidence: change.evidence.map(sanitizeModelEvidence) } : {}),
-      })),
-    };
-  }
-  if (command.type === "rescope") {
-    return {
-      ...command,
-      source: "model",
-      objectives: command.objectives.map((objective) =>
-        sanitizeModelObjective(
-          objective,
-          previous?.objectives.find((stored) => stored.id === objective.id),
-        ),
-      ),
-    };
-  }
-  return { ...command, source: "model" };
-}
-
 export class GoalProgressHelper {
   readonly paths: GoalProgressPaths;
   readonly #lockOptions: HelperLockOptions;
@@ -339,6 +312,7 @@ export class GoalProgressHelper {
     | undefined;
   #startupListener: GoalProgressStartupListener | undefined;
   #startupHandoff: MacosStartupHandoffController | undefined;
+  readonly #sourcePluginRuntime: boolean;
   readonly #goalUsage = new Map<string, GoalUsageSnapshot>();
   readonly #preparingObjectives = new Map<string, string>();
   readonly #visibleThreadOrderByTarget = new Map<string, VisibleThreadOrder>();
@@ -357,6 +331,8 @@ export class GoalProgressHelper {
   >();
   #updateActivationRunning = false;
   #ready = false;
+  readonly #pendingUiDelivery = new Map<string, GoalProgressViewModel>();
+  #uiDeliveryRunning = false;
 
   get currentUpdateState(): GoalProgressUpdateState | null {
     return this.#viewModelPublisher.currentUpdateState;
@@ -393,6 +369,7 @@ export class GoalProgressHelper {
     });
     this.#viewModelPublisher = new ViewModelPublisher(options.viewModelSink);
     const sourcePluginRuntime = options.sourcePluginRuntime ?? usesSourcePluginRuntime();
+    this.#sourcePluginRuntime = sourcePluginRuntime;
     const checkForUpdate =
       options.checkForUpdate ?? (sourcePluginRuntime ? sourcePluginUpdateManifest : undefined);
     this.#updateCoordinator = new GoalProgressUpdateCoordinator({
@@ -474,8 +451,20 @@ export class GoalProgressHelper {
       pid: event.pid,
     });
     let response: MacosCodexStartupResponse;
+    let causeCode: string | undefined;
     try {
-      if (!this.#startupHandoff) {
+      const recoveryConsent = this.#sourcePluginRuntime
+        ? await readStartupRecoveryConsent(this.paths)
+        : null;
+      if (this.#sourcePluginRuntime && !recoveryConsent) {
+        // Ordinary installation restart approval never implies persistent recovery approval.
+        response = {
+          schemaVersion: 1,
+          pid: event.pid,
+          action: "continue",
+          code: "RESTART_REQUIRED",
+        };
+      } else if (!this.#startupHandoff) {
         response = {
           schemaVersion: 1,
           pid: event.pid,
@@ -489,13 +478,12 @@ export class GoalProgressHelper {
           {
             isPending: () => this.#startupListener?.isPending(event.pid) === true,
             isStopped: () => this.#server === undefined,
+            ...(recoveryConsent ? { recoveryConsent } : {}),
           },
         );
-        if (response.code === "STARTUP_HANDOFF_COMPLETE") {
-          await this.#recoverAfterStartupHandoff(response);
-        }
       }
-    } catch {
+    } catch (error) {
+      causeCode = helperDiagnosticCauseCode(error);
       response = {
         schemaVersion: 1,
         pid: event.pid,
@@ -508,11 +496,31 @@ export class GoalProgressHelper {
       event: "startup.handoff",
       pid: event.pid,
       code: response.code,
+      ...(causeCode === undefined ? {} : { causeCode }),
       durationMs: Date.now() - startedAt,
       ...(response.mainPid === undefined ? {} : { mainPid: response.mainPid }),
       ...(response.port === undefined ? {} : { port: response.port }),
       ...(response.launchId === undefined ? {} : { launchId: response.launchId }),
     });
+    if (response.code === "STARTUP_HANDOFF_COMPLETE") {
+      try {
+        await this.#recoverAfterStartupHandoff(response);
+      } catch (error) {
+        // Process handoff is already complete. UI failure cannot undo that result.
+        const uiCauseCode = helperDiagnosticCauseCode(error);
+        await this.#log({
+          level: "warn",
+          event: "startup.ui-recovery",
+          code: "STARTUP_UI_RECOVERY_FAILED",
+          causeCode: uiCauseCode,
+          pid: event.pid,
+          ...(response.mainPid === undefined ? {} : { mainPid: response.mainPid }),
+          ...(response.port === undefined ? {} : { port: response.port }),
+          ...(response.launchId === undefined ? {} : { launchId: response.launchId }),
+        });
+        if (retryableBridgeError(uiCauseCode)) this.#scheduleVisibleThreadRecovery(0);
+      }
+    }
     return response;
   }
 
@@ -768,6 +776,7 @@ export class GoalProgressHelper {
   }
 
   #usageFor(contract: GoalContractAny): GoalUsageSnapshot | undefined {
+    if (contract.schemaVersion === 2 && contract.task) return undefined;
     const threadId = contract.schemaVersion === 2 ? contract.threadId : contract.sessionId;
     return this.#goalUsage.get(threadId);
   }
@@ -908,10 +917,10 @@ export class GoalProgressHelper {
   ): Promise<GoalProgressTrackingOverlay> {
     const threadId = this.#threadIdOf(contract);
     const overlay = await this.#overlayFor(threadId);
-    if (contract.schemaVersion !== 2 || usage?.stale) {
+    if (contract.schemaVersion !== 2 || contract.task || usage?.stale) {
       return overlay;
     }
-    if (contract.nativeGoal.status === "complete" && usage && !usage.goal) {
+    if (contract.nativeGoal?.status === "complete" && usage && !usage.goal) {
       return overlay;
     }
     let nativeGoal: TrustedNativeGoal | null;
@@ -924,7 +933,7 @@ export class GoalProgressHelper {
         return overlay;
       }
     }
-    if (contract.nativeGoal.status === "complete" && !nativeGoal) {
+    if (contract.nativeGoal?.status === "complete" && !nativeGoal) {
       return overlay;
     }
     if (overlay.detached) {
@@ -951,6 +960,10 @@ export class GoalProgressHelper {
       return;
     }
     const usage = this.#goalUsage.get(threadId);
+    if (contract?.schemaVersion === 2 && contract.task) {
+      this.#runtime.setPollingMode("stopped", threadId);
+      return;
+    }
     if (preference.hidden) {
       this.#runtime.setPollingMode("stopped", threadId);
       return;
@@ -987,10 +1000,12 @@ export class GoalProgressHelper {
     this.#runtime.setPollingMode("active", threadId);
   }
 
-  #watchThread(threadId: string): void {
+  async #watchThread(threadId: string): Promise<void> {
     if (!this.#enableGoalWatch) {
       return;
     }
+    const contract = (await this.#store.load(threadId)).contract;
+    if (contract?.schemaVersion === 2 && contract.task) return;
     this.#runtime.watchGoalUsage(threadId, (snapshot) => {
       this.#goalUsage.set(snapshot.threadId, snapshot);
       void this.#publishUsageChange(snapshot).catch(() => undefined);
@@ -1010,10 +1025,43 @@ export class GoalProgressHelper {
   }
 
   async #publishVerified(threadId: string, viewModel: GoalProgressViewModel): Promise<void> {
-    if (viewModel.trackingPhase === "completed") {
-      if (this.#enableGoalWatch) {
-        this.#runtime.setPollingMode("stopped", threadId);
+    if (viewModel.trackingPhase === "completed" && this.#enableGoalWatch) {
+      this.#runtime.setPollingMode("stopped", threadId);
+    }
+    const server = this.#server;
+    if (!server) return;
+    // Store/Contract revisions are authoritative. A slow renderer only needs the latest snapshot.
+    this.#pendingUiDelivery.set(threadId, viewModel);
+    if (this.#uiDeliveryRunning) return;
+    this.#uiDeliveryRunning = true;
+    void (async () => {
+      try {
+        while (this.#server === server && this.#pendingUiDelivery.size > 0) {
+          const next = this.#pendingUiDelivery.entries().next().value;
+          if (!next) break;
+          const [id, snapshot] = next;
+          this.#pendingUiDelivery.delete(id);
+          try {
+            await this.#deliverVerified(id, snapshot);
+          } catch (error) {
+            if (this.#server !== server) return;
+            await this.#log({
+              level: "warn",
+              event: "helper.ui.unavailable",
+              code: helperErrorCode(error),
+            });
+            this.#scheduleVisibleThreadRecovery(0);
+          }
+        }
+      } finally {
+        // Synchronous with the final empty check: no microtask can enqueue into a retiring drain.
+        this.#uiDeliveryRunning = false;
       }
+    })().catch(() => undefined);
+  }
+
+  async #deliverVerified(threadId: string, viewModel: GoalProgressViewModel): Promise<void> {
+    if (viewModel.trackingPhase === "completed") {
       await this.#viewModelPublisher.clear(threadId);
       return;
     }
@@ -1073,10 +1121,10 @@ export class GoalProgressHelper {
   async #syncNativeGoalStatus(snapshot: GoalUsageSnapshot): Promise<GoalContractAny | null> {
     const loaded = await this.#store.load(snapshot.threadId);
     const contract = loaded.contract;
-    if (contract?.schemaVersion !== 2 || snapshot.stale) {
+    if (contract?.schemaVersion !== 2 || contract.task || snapshot.stale) {
       return contract;
     }
-    if (contract.nativeGoal.status === "complete" && !snapshot.goal) {
+    if (contract.nativeGoal?.status === "complete" && !snapshot.goal) {
       return contract;
     }
     const overlay = await this.#overlayFor(snapshot.threadId);
@@ -1214,6 +1262,13 @@ export class GoalProgressHelper {
       }
       return { status: "inactive" };
     }
+    if (contract.schemaVersion === 2 && contract.task) {
+      await this.#publishVerified(
+        threadId,
+        this.#projectState(contract, persistedOverlay).viewModel,
+      );
+      return { status: "active", contractId: contract.contractId, revision: contract.revision };
+    }
     let nativeGoal: TrustedNativeGoal | null = null;
     try {
       nativeGoal = await this.#sessionCoordinator.readNativeGoal(threadId);
@@ -1249,7 +1304,7 @@ export class GoalProgressHelper {
         reasonCode: causeCode,
       };
     }
-    this.#watchThread(threadId);
+    await this.#watchThread(threadId);
     const usage = await this.#refreshUsage(threadId);
     const latest = (await this.#store.load(threadId)).contract ?? contract;
     const overlay = await this.#overlayForCurrentNativeGoal(latest, usage);
@@ -1410,6 +1465,12 @@ export class GoalProgressHelper {
   }
 
   async #refreshUsage(threadId: string): Promise<GoalUsageSnapshot | undefined> {
+    const current = (await this.#store.load(threadId)).contract;
+    if (current?.schemaVersion === 2 && current.task) {
+      this.#goalUsage.delete(threadId);
+      if (this.#enableGoalWatch) this.#runtime.unwatchGoalUsage?.(threadId);
+      return undefined;
+    }
     if (!this.#enableGoalWatch) {
       return this.#goalUsage.get(threadId);
     }
@@ -1542,10 +1603,10 @@ export class GoalProgressHelper {
       }
       const loaded = await this.#store.load(identity.threadId);
       const contract = loaded.contract;
-      if (!contract) {
+      if (!contract?.nativeGoal) {
         return { revision: null, result: { accepted: false } };
       }
-      if (contract.nativeGoal.status === "complete") {
+      if (contract.nativeGoal?.status === "complete") {
         return { revision: contract.revision, result: { accepted: true } };
       }
       const requestKey = hashGoalProgressIdentity(request.params.toolUseId);
@@ -1635,8 +1696,45 @@ export class GoalProgressHelper {
       event: "activation.requested",
       ...identityLogFields(identity),
     });
-    const nativeGoal = await this.#sessionCoordinator.readNativeGoal(identity.threadId);
     const loaded = await this.#store.load(identity.threadId);
+    const stored = loaded.contract;
+    if (request.params.mode === "task" || (stored?.schemaVersion === 2 && stored.task)) {
+      const overlay = await this.#overlayFor(identity.threadId);
+      const activationState = await this.#activationStateForOverlay(identity.threadId, overlay);
+      const reusable =
+        stored?.schemaVersion === 2 &&
+        stored.task &&
+        stored.phase !== "completed" &&
+        !isUserDetachedActivationState(activationState);
+      if (
+        stored &&
+        !(stored.schemaVersion === 2 && stored.task) &&
+        stored.phase !== "completed" &&
+        !overlay.detached
+      ) {
+        throw new GoalProgressIpcHandlerError(
+          "TRACKING_ALREADY_ACTIVE",
+          "This thread already tracks a native Goal",
+          stored.revision,
+        );
+      }
+      if (reusable)
+        await this.#publishVerified(
+          identity.threadId,
+          this.#projectState(stored, overlay).viewModel,
+        );
+      return {
+        revision: reusable ? stored.revision : null,
+        result: {
+          progressAction: reusable ? "get" : "initialize",
+          preparing: !reusable,
+          code: reusable ? "TASK_GET" : "TASK_INITIALIZE",
+          contractId: reusable ? stored.contractId : null,
+          revision: reusable ? stored.revision : null,
+        },
+      };
+    }
+    const nativeGoal = await this.#sessionCoordinator.readNativeGoal(identity.threadId);
     const current = await this.#sessionCoordinator.contractForWrite(
       identity,
       loaded.contract,
@@ -1743,7 +1841,7 @@ export class GoalProgressHelper {
       }
     }
     if (contract) {
-      this.#watchThread(identity.threadId);
+      await this.#watchThread(identity.threadId);
       const usage = await this.#refreshUsage(identity.threadId);
       loaded = await this.#store.load(identity.threadId);
       contract = loaded.contract ?? contract;
@@ -1776,6 +1874,9 @@ export class GoalProgressHelper {
         result: {
           ...diagnostics,
           ...projected,
+          ...(contract.schemaVersion === 2 && contract.task
+            ? taskRecoveryPage(contract, request.params.cursor)
+            : {}),
         },
       };
     }
@@ -1906,7 +2007,7 @@ export class GoalProgressHelper {
       );
     }
     const threadId = this.#threadIdOf(loaded.contract);
-    this.#watchThread(threadId);
+    await this.#watchThread(threadId);
     const usage = await this.#refreshUsage(threadId);
     const contract = (await this.#store.load(threadId)).contract ?? loaded.contract;
     const overlay = await this.#overlayForCurrentNativeGoal(contract, usage);
@@ -2044,13 +2145,19 @@ export class GoalProgressHelper {
     try {
       const overlay = await this.#overlayFor(identity.threadId);
       const activationState = await this.#activationStateForOverlay(identity.threadId, overlay);
-      if (activationState.detachReason === "user-dismissed-preparation") {
+      if (
+        !request.params.initialization.task &&
+        activationState.detachReason === "user-dismissed-preparation"
+      ) {
         throw new GoalProgressIpcHandlerError(
           "ACTIVATION_CANCELLED",
           "Goal Progress preparation was closed by the user before initialization",
         );
       }
-      if (activationState.detachReason === "user-detached-tracking") {
+      if (
+        !request.params.initialization.task &&
+        activationState.detachReason === "user-detached-tracking"
+      ) {
         throw new GoalProgressIpcHandlerError(
           "TRACKING_DETACHED_BY_USER",
           "Goal Progress tracking was closed by the user",
@@ -2064,7 +2171,9 @@ export class GoalProgressHelper {
           "establishing-baseline",
         );
       }
-      const nativeGoal = await this.#sessionCoordinator.trustedNativeGoal(identity.threadId);
+      const nativeGoal = request.params.initialization.task
+        ? null
+        : await this.#sessionCoordinator.trustedNativeGoal(identity.threadId);
       const current = await this.#store.load(identity.threadId);
       const currentContract = current.contract?.schemaVersion === 2 ? current.contract : null;
       const contract = createModelContract(
@@ -2078,28 +2187,44 @@ export class GoalProgressHelper {
           ? { ...request.params.metadata, source: "model" as const }
           : request.params.metadata;
       let initialized: GoalEventStoreWriteSuccess;
-      const currentBinding = currentContract?.nativeGoalBinding ?? null;
-      const objectiveChangedInPlace =
-        currentBinding !== null &&
-        currentBinding.createdAt === nativeGoal.createdAt &&
-        currentBinding.objectiveHash !== hashNativeGoalObjective(nativeGoal.objective);
-      if (
-        currentContract &&
-        (currentContract.nativeGoalBinding.createdAt !== nativeGoal.createdAt ||
-          objectiveChangedInPlace)
-      ) {
-        initialized = await this.#store.replace(contract, metadata, {
-          contractId: currentContract.contractId,
-          revision: currentContract.revision,
-        });
-      } else {
-        if (currentContract) {
-          assertBoundNativeGoal(currentContract, nativeGoal, currentContract.revision);
+      if (currentContract?.task || request.params.initialization.task) {
+        if (currentContract && currentContract.contractId !== contract.contractId) {
+          if (currentContract.phase !== "completed" && !overlay.detached) {
+            throw new GoalProgressIpcHandlerError(
+              "TRACKING_ALREADY_ACTIVE",
+              "Complete or explicitly detach the current tracking record first",
+              currentContract.revision,
+            );
+          }
+          initialized = await this.#store.replace(contract, metadata, {
+            contractId: currentContract.contractId,
+            revision: currentContract.revision,
+            previousDetached: overlay.detached,
+          });
+        } else {
+          initialized = await this.#store.initialize(contract, metadata);
         }
-        initialized = await this.#store.initialize(contract, metadata);
+      } else {
+        const currentBinding = currentContract?.nativeGoalBinding ?? null;
+        if (
+          currentContract &&
+          nativeGoal &&
+          currentBinding &&
+          (currentBinding.createdAt !== nativeGoal.createdAt ||
+            currentBinding.objectiveHash !== hashNativeGoalObjective(nativeGoal.objective))
+        ) {
+          initialized = await this.#store.replace(contract, metadata, {
+            contractId: currentContract.contractId,
+            revision: currentContract.revision,
+          });
+        } else {
+          if (currentContract)
+            assertBoundNativeGoal(currentContract, nativeGoal, currentContract.revision);
+          initialized = await this.#store.initialize(contract, metadata);
+        }
       }
       this.#preparingObjectives.delete(identity.threadId);
-      this.#watchThread(identity.threadId);
+      await this.#watchThread(identity.threadId);
       await this.#refreshUsage(identity.threadId);
       const latest = (await this.#store.load(identity.threadId)).contract ?? initialized.contract;
       await writeGoalProgressActivationState(
@@ -2167,7 +2292,11 @@ export class GoalProgressHelper {
     let commandForStore: GoalProgressCommand =
       context.clientKind === "mcp" ? sanitizeModelCommand(command, contract ?? undefined) : command;
     let retargeted = false;
-    if (contract && (command.type === "rescope" || contract.nativeGoal.status !== "complete")) {
+    if (
+      contract &&
+      !contract.task &&
+      (command.type === "rescope" || contract.nativeGoal?.status !== "complete")
+    ) {
       const nativeGoal = await this.#sessionCoordinator.readNativeGoal(
         identity.threadId,
         contract.revision,
@@ -2239,7 +2368,7 @@ export class GoalProgressHelper {
     if (retargeted) {
       this.#preparingObjectives.delete(identity.threadId);
     }
-    this.#watchThread(identity.threadId);
+    await this.#watchThread(identity.threadId);
     await this.#refreshUsage(identity.threadId);
     await this.#applyPollingMode(
       identity.threadId,
@@ -2350,15 +2479,16 @@ export class GoalProgressHelper {
     if (this.#server !== server) {
       return;
     }
-    const recoveredTargets = this.#viewModelPublisher.multiTargetAwarenessAvailable
-      ? await this.#viewModelPublisher.recoverVisibleTargets()
-      : [];
-    const recoveredVisibleThreadId = this.#viewModelPublisher.multiTargetAwarenessAvailable
-      ? undefined
-      : await this.#viewModelPublisher.recoverVisibleThreadId();
-    await this.#viewModelPublisher.initialize();
+    this.#ready = true;
+    void this.#initializeUi(server).catch(() => undefined);
+    void this.#maybeStartAutomaticUpdateCheck().catch(() => undefined);
+    await this.#log({ level: "info", event: "helper.started" });
+  }
+
+  async #initializeUi(server: GoalProgressIpcServer): Promise<void> {
     try {
       const updateState = await this.#updateCoordinator.initialize();
+      if (this.#server !== server) return;
       await this.#viewModelPublisher.setUpdateState(updateState);
       if (updateState.phase === "up-to-date") {
         await this.#cleanupCompletedUpdate();
@@ -2366,30 +2496,42 @@ export class GoalProgressHelper {
     } catch {
       // Update state is optional; Goal tracking remains available if it cannot be restored.
     }
-    if (this.#viewModelPublisher.multiTargetAwarenessAvailable) {
-      for (const target of recoveredTargets) {
-        await this.#viewModelPublisher.activateTarget(target.targetId, target.threadId);
-        if (!target.threadId) {
-          continue;
+    try {
+      const recoveredTargets = this.#viewModelPublisher.multiTargetAwarenessAvailable
+        ? await this.#viewModelPublisher.recoverVisibleTargets()
+        : [];
+      const recoveredVisibleThreadId = this.#viewModelPublisher.multiTargetAwarenessAvailable
+        ? undefined
+        : await this.#viewModelPublisher.recoverVisibleThreadId();
+      if (this.#server !== server) return;
+      await this.#viewModelPublisher.initialize();
+      if (this.#server !== server) return;
+      if (this.#viewModelPublisher.multiTargetAwarenessAvailable) {
+        for (const target of recoveredTargets) {
+          await this.#viewModelPublisher.activateTarget(target.targetId, target.threadId);
+          if (!target.threadId) {
+            continue;
+          }
+          await this.#restoreVisibleThread(target.threadId).catch(() => "retry");
         }
-        await this.#restoreVisibleThread(target.threadId).catch(() => "retry");
-      }
-    } else if (recoveredVisibleThreadId) {
-      const restored = await this.#restoreVisibleThread(recoveredVisibleThreadId).catch(
-        (): "retry" => "retry",
-      );
-      if (restored === "retry") {
+      } else if (recoveredVisibleThreadId) {
+        const restored = await this.#restoreVisibleThread(recoveredVisibleThreadId).catch(
+          (): "retry" => "retry",
+        );
+        if (restored === "retry") {
+          this.#scheduleVisibleThreadRecovery(0);
+        }
+      } else {
         this.#scheduleVisibleThreadRecovery(0);
       }
-    } else {
+    } catch (error) {
+      await this.#log({
+        level: "warn",
+        event: "helper.ui.unavailable",
+        code: helperErrorCode(error),
+      });
       this.#scheduleVisibleThreadRecovery(0);
     }
-    this.#ready = true;
-    void this.#maybeStartAutomaticUpdateCheck().catch(() => undefined);
-    await this.#log({
-      level: "info",
-      event: "helper.started",
-    });
   }
 
   async setViewModelSink(sink?: ViewModelPublisherSink): Promise<void> {
@@ -2399,6 +2541,7 @@ export class GoalProgressHelper {
   async stop(): Promise<void> {
     const preservePage = this.#viewModelPublisher.currentUpdateState?.phase === "installing";
     this.#ready = false;
+    this.#pendingUiDelivery.clear();
     this.#clearUpdateActivationRetries();
     this.#visibleThreadOrderByTarget.clear();
     const server = this.#server;
@@ -2417,8 +2560,10 @@ export class GoalProgressHelper {
         event: "startup.listener.stopped",
       });
     }
-    await server?.stop();
+    // Stop accepting requests, cancel UI transport waits, then drain core writes already in flight.
+    const stopped = server?.stop();
     await this.#viewModelPublisher.close(preservePage ? { preservePage: true } : undefined);
+    await stopped;
     await this.#runtime.close();
     await this.#log({
       level: "info",

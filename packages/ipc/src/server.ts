@@ -2,6 +2,7 @@ import { chmod, unlink } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { isAbsolute } from "node:path";
 import type { GoalProgressViewModel } from "../../contracts/src/index.js";
+import { ensureHelperSocketDirectory } from "../../store/src/socket-path.cjs";
 import {
   GOAL_PROGRESS_IPC_MAX_MESSAGE_BYTES,
   GOAL_PROGRESS_IPC_PROTOCOL_VERSION,
@@ -134,6 +135,7 @@ export class GoalProgressIpcServer {
         "Goal Progress IPC server is already running",
       );
     }
+    await ensureHelperSocketDirectory(this.#socketPath);
     if (options.removeStaleSocket) {
       await unlink(this.#socketPath).catch((error: unknown) => {
         if (

@@ -34,7 +34,7 @@ function stableErrorCode(error: unknown): string {
   return /^[A-Z][A-Z0-9_]{2,127}/u.exec(value)?.[0] ?? "RENDERER_BRIDGE_UNAVAILABLE";
 }
 
-function retryableBridgeError(code: string): boolean {
+export function retryableBridgeError(code: string): boolean {
   const fatalCodes = [
     "GOAL_PROGRESS_CDP_NON_LOOPBACK_LISTENER",
     "GOAL_PROGRESS_CDP_LISTENER_PROCESS_MISMATCH",

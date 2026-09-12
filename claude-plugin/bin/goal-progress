@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+node_bin=$(command -v node) || { echo 'Goal Progress requires Node.js 22.12 or newer.' >&2; exit 1; }
+"$node_bin" -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=12)?0:1)' || { echo 'Goal Progress requires Node.js 22.12 or newer.' >&2; exit 1; }
+if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then export GOAL_PROGRESS_CLAUDE_DATA="$CLAUDE_PLUGIN_DATA"; fi
+exec "$node_bin" "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/goal-progress.cjs" "$@"

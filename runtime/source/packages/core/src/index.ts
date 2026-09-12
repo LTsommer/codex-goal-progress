@@ -20,6 +20,7 @@ import {
   GoalProgressItemChangeSchema,
   type GoalProgressViewModel,
   GoalProgressViewModelSchema,
+  isTaskContract,
   type NativeGoalTokenUsage,
   NativeGoalTokenUsageSchema,
   parseGoalContractAny,
@@ -108,7 +109,10 @@ export interface NativeGoalMigrationSource {
   readonly threadId: string;
   readonly objective: string;
   readonly createdAt: number;
-  readonly status: GoalContract["nativeGoal"]["status"] | "usageLimited" | "budgetLimited";
+  readonly status:
+    | NonNullable<GoalContract["nativeGoal"]>["status"]
+    | "usageLimited"
+    | "budgetLimited";
   readonly tokenBudget?: number | null;
 }
 
@@ -339,8 +343,13 @@ function calculateValidatedGoalProgress(contract: GoalContractAny): GoalProgress
 
   rawProgressBps = Math.min(GOAL_PROGRESS_BPS_TOTAL, rawProgressBps);
   const contractComplete = requiredObjectivesComplete(contract.objectives);
-  const nativeGoalComplete = contract.nativeGoal.status === "complete";
-  const completionConfirmed = contractComplete && nativeGoalComplete;
+  const nativeGoalComplete = contract.nativeGoal?.status === "complete";
+  const completionConfirmed =
+    contractComplete &&
+    (isTaskContract(contract)
+      ? contract.phase === "completed" &&
+        contract.task.completionEvidence?.verification === "verified"
+      : nativeGoalComplete);
   const displayProgressBps = completionConfirmed
     ? GOAL_PROGRESS_BPS_TOTAL
     : Math.min(rawProgressBps, FINAL_VERIFICATION_CAP_BPS);
@@ -352,8 +361,14 @@ function calculateValidatedGoalProgress(contract: GoalContractAny): GoalProgress
     contractComplete,
     nativeGoalComplete,
     completionConfirmed,
-    finalVerificationPending: contractComplete && !nativeGoalComplete,
+    finalVerificationPending: contractComplete && !completionConfirmed,
   };
+}
+
+function completionAllowed(contract: GoalContractAny, verification?: GoalEvidence): boolean {
+  return isTaskContract(contract)
+    ? requiredObjectivesComplete(contract.objectives) && verification?.verification === "verified"
+    : calculateValidatedGoalProgress(contract).completionConfirmed;
 }
 
 export function calculateGoalProgress(contractInput: unknown): GoalProgressCalculationResult {
@@ -432,10 +447,13 @@ function viewPhase(
   if (calculation.completionConfirmed) {
     return "completed";
   }
-  if (contract.nativeGoal.status === "paused") {
+  if (
+    (isTaskContract(contract) && contract.phase === "paused") ||
+    contract.nativeGoal?.status === "paused"
+  ) {
     return "paused";
   }
-  if (contract.nativeGoal.status === "blocked") {
+  if (contract.nativeGoal?.status === "blocked") {
     return "blocked";
   }
   if (contract.phase === "error" && contract.objectives.length === 0) {
@@ -472,6 +490,7 @@ export function projectGoalProgressViewModel(
       : NativeGoalTokenUsageSchema.safeParse(options.tokenUsage);
   const tokenUsage =
     tracksProgress &&
+    !isTaskContract(contract) &&
     tokenResult?.success &&
     tokenResult.data.availability === "available" &&
     tokenResult.data.threadId === contract.sessionId
@@ -524,14 +543,21 @@ export function projectGoalProgressViewModel(
     ...(trackingPhase === "blocked"
       ? {
           blockedReason:
-            ("blockedReason" in contract.nativeGoal
+            (contract.nativeGoal && "blockedReason" in contract.nativeGoal
               ? contract.nativeGoal.blockedReason
               : undefined) ?? "native-goal",
         }
       : {}),
-    objective: contract.nativeGoal.objective,
-    overallProgressBps: tracksProgress ? calculation.displayProgressBps : null,
-    overallPercent: tracksProgress ? Math.floor(calculation.displayProgressBps / 100) : null,
+    objective: isTaskContract(contract) ? contract.task.objective : contract.nativeGoal?.objective,
+    ...(isTaskContract(contract) ? { task: contract.task } : {}),
+    overallProgressBps:
+      tracksProgress && !(isTaskContract(contract) && contract.objectives.length === 0)
+        ? calculation.displayProgressBps
+        : null,
+    overallPercent:
+      tracksProgress && !(isTaskContract(contract) && contract.objectives.length === 0)
+        ? Math.floor(calculation.displayProgressBps / 100)
+        : null,
     finalVerificationPending: tracksProgress ? calculation.finalVerificationPending : false,
     objectives: visibleObjectives
       .filter((objective) => !objectiveIsOptional(objective))
@@ -838,6 +864,31 @@ export function applyGoalProgressCommand(
   const nextRevision = contract.revision + 1;
   const envelope = eventEnvelope(command, nextRevision);
 
+  if (command.type === "update-exploration") {
+    if (!isTaskContract(contract) || contract.objectives.length !== 0) {
+      return failure(
+        "INVALID_TRANSITION",
+        contract.revision,
+        "Exploration updates require an unscoped task",
+      );
+    }
+    const payload = {
+      currentStep: command.currentStep,
+      findings: command.findings,
+      openQuestions: command.openQuestions,
+    };
+    return finalizeCommand(
+      contract,
+      {
+        ...contract,
+        task: { ...contract.task, ...payload },
+        revision: nextRevision,
+        updatedAt: command.occurredAt,
+      },
+      { ...envelope, type: "contract.exploration-updated", payload },
+    );
+  }
+
   if (command.type === "update-items") {
     const applied = applyItemChanges(contract, command.changes, command.activeObjectiveId);
     if (!applied.ok) {
@@ -865,7 +916,7 @@ export function applyGoalProgressCommand(
       ...updatedContract,
       phase:
         requiredObjectivesComplete(applied.objectives) &&
-        updatedContract.nativeGoal.status === "complete"
+        updatedContract.nativeGoal?.status === "complete"
           ? ("completed" as const)
           : updatedContract.phase,
     };
@@ -890,9 +941,16 @@ export function applyGoalProgressCommand(
       return failure("INVALID_SCOPE", contract.revision, "Rescope requires a reason");
     }
     const scopeRevision = contract.scopeRevision + 1;
-    const phase = contract.nativeGoal.status === "paused" ? "paused" : "active";
+    const phase =
+      (isTaskContract(contract) && contract.phase === "paused") ||
+      contract.nativeGoal?.status === "paused"
+        ? "paused"
+        : "active";
     const candidate = {
       ...contract,
+      ...(isTaskContract(contract)
+        ? { task: { ...contract.task, completionEvidence: undefined } }
+        : {}),
       objectives: [...command.objectives],
       phase,
       revision: nextRevision,
@@ -921,6 +979,12 @@ export function applyGoalProgressCommand(
   }
 
   if (command.type === "retarget-rescope") {
+    if (!contract.nativeGoalBinding || !contract.nativeGoal)
+      return failure(
+        "INVALID_TRANSITION",
+        contract.revision,
+        "Task tracking cannot retarget a native Goal",
+      );
     const reason = command.reason.trim();
     const bindingChanged =
       command.nativeGoalBinding.createdAt !== contract.nativeGoalBinding.createdAt ||
@@ -974,7 +1038,7 @@ export function applyGoalProgressCommand(
   }
 
   if (command.type === "set-phase") {
-    if (command.phase === "paused" || command.phase === "error") {
+    if ((!isTaskContract(contract) && command.phase === "paused") || command.phase === "error") {
       return failure(
         "INVALID_TRANSITION",
         contract.revision,
@@ -988,30 +1052,33 @@ export function applyGoalProgressCommand(
         `Cannot change phase from ${contract.phase} to ${command.phase}`,
       );
     }
-    if (
-      command.phase === "completed" &&
-      !calculateValidatedGoalProgress(contract).completionConfirmed
-    ) {
+    if (command.phase === "completed" && !completionAllowed(contract, command.verification)) {
       return failure(
         "INVALID_TRANSITION",
         contract.revision,
-        "Completion requires a complete Contract and native Goal",
+        "Completion requires all required results and final verification (or a complete native Goal)",
       );
     }
     const candidate = {
       ...contract,
       phase: command.phase,
+      ...(isTaskContract(contract) && command.phase === "completed"
+        ? { task: { ...contract.task, completionEvidence: command.verification } }
+        : {}),
       revision: nextRevision,
       updatedAt: command.occurredAt,
     };
     return finalizeCommand(contract, candidate, {
       ...envelope,
       type: "contract.phase-changed",
-      payload: { phase: command.phase },
+      payload: {
+        phase: command.phase,
+        ...(command.verification ? { verification: command.verification } : {}),
+      },
     });
   }
 
-  if (command.nativeGoal.objective !== contract.nativeGoal.objective) {
+  if (!contract.nativeGoal || command.nativeGoal.objective !== contract.nativeGoal.objective) {
     return failure(
       "CONTRACT_MISMATCH",
       contract.revision,
@@ -1142,6 +1209,8 @@ export function reduceGoalProgressEvent(
     const replacement = event.payload.contract;
     const nativeGoalBindingChanged =
       current.schemaVersion === 2 &&
+      current.nativeGoalBinding !== null &&
+      replacement.nativeGoalBinding !== null &&
       (replacement.nativeGoalBinding.createdAt !== current.nativeGoalBinding.createdAt ||
         replacement.nativeGoalBinding.objectiveHash !== current.nativeGoalBinding.objectiveHash);
     if (
@@ -1154,7 +1223,11 @@ export function reduceGoalProgressEvent(
       replacement.revision !== 1 ||
       replacement.contractId === current.contractId ||
       replacement.threadId !== current.threadId ||
-      !nativeGoalBindingChanged ||
+      !(
+        (!isTaskContract(current) && !isTaskContract(replacement) && nativeGoalBindingChanged) ||
+        ((isTaskContract(current) || isTaskContract(replacement)) &&
+          (current.phase === "completed" || event.payload.previousDetached === true))
+      ) ||
       Date.parse(event.occurredAt) < Date.parse(current.updatedAt)
     ) {
       return failure(
@@ -1196,7 +1269,21 @@ export function reduceGoalProgressEvent(
   }
 
   let candidate: unknown;
-  if (event.type === "contract.items-updated") {
+  if (event.type === "contract.exploration-updated") {
+    if (!isTaskContract(current) || current.objectives.length !== 0) {
+      return failure(
+        "INVALID_TRANSITION",
+        current.revision,
+        "Exploration updates require an unscoped task",
+      );
+    }
+    candidate = {
+      ...current,
+      task: { ...current.task, ...event.payload },
+      revision: event.revision,
+      updatedAt: event.occurredAt,
+    };
+  } else if (event.type === "contract.items-updated") {
     const applied = applyItemChanges(
       current,
       event.payload.changes,
@@ -1227,7 +1314,7 @@ export function reduceGoalProgressEvent(
       ...updatedContract,
       phase:
         requiredObjectivesComplete(applied.objectives) &&
-        updatedContract.nativeGoal.status === "complete"
+        updatedContract.nativeGoal?.status === "complete"
           ? "completed"
           : updatedContract.phase,
     };
@@ -1241,8 +1328,15 @@ export function reduceGoalProgressEvent(
     }
     candidate = {
       ...current,
+      ...(isTaskContract(current)
+        ? { task: { ...current.task, completionEvidence: undefined } }
+        : {}),
       objectives: objectivesForContract(current, event.payload.objectives),
-      phase: current.nativeGoal.status === "paused" ? "paused" : "active",
+      phase:
+        (isTaskContract(current) && current.phase === "paused") ||
+        current.nativeGoal?.status === "paused"
+          ? "paused"
+          : "active",
       revision: event.revision,
       scopeRevision: event.payload.scopeRevision,
       lastScopeChange: {
@@ -1255,6 +1349,7 @@ export function reduceGoalProgressEvent(
   } else if (event.type === "contract.retargeted") {
     const bindingChanged =
       current.schemaVersion === 2 &&
+      current.nativeGoalBinding !== null &&
       (event.payload.nativeGoalBinding.createdAt !== current.nativeGoalBinding.createdAt ||
         event.payload.nativeGoalBinding.objectiveHash !== current.nativeGoalBinding.objectiveHash);
     if (
@@ -1297,22 +1392,28 @@ export function reduceGoalProgressEvent(
     }
     if (
       event.payload.phase === "completed" &&
-      !calculateValidatedGoalProgress(current).completionConfirmed
+      !completionAllowed(current, event.payload.verification)
     ) {
       return failure(
         "INVALID_TRANSITION",
         current.revision,
-        "Completion requires a complete Contract and native Goal",
+        "Completion requires all required results and final verification (or a complete native Goal)",
       );
     }
     candidate = {
       ...current,
       phase: event.payload.phase,
+      ...(isTaskContract(current) && event.payload.phase === "completed"
+        ? { task: { ...current.task, completionEvidence: event.payload.verification } }
+        : {}),
       revision: event.revision,
       updatedAt: event.occurredAt,
     };
   } else if (event.type === "native-goal.synced") {
-    if (event.payload.nativeGoal.objective !== current.nativeGoal.objective) {
+    if (
+      !current.nativeGoal ||
+      event.payload.nativeGoal.objective !== current.nativeGoal.objective
+    ) {
       return failure(
         "CONTRACT_MISMATCH",
         current.revision,
@@ -1357,3 +1458,11 @@ export function reduceGoalProgressEvent(
   }
   return { ok: true, contract: parsedCandidate.data, event };
 }
+
+export {
+  createTaskContract,
+  sanitizeModelCommand,
+  sanitizeModelEvidence,
+  sanitizeModelObjective,
+} from "./model-task.js";
+export { TaskRecoveryError, taskRecoveryPage } from "./task-recovery.js";

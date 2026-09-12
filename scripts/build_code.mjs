@@ -1,4 +1,4 @@
-import { readdir, rm } from "node:fs/promises";
+import { copyFile, readdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { build } from "esbuild";
 
@@ -43,3 +43,9 @@ await build({
   platform: "neutral",
   format: "esm",
 });
+
+// Keep the shared CommonJS socket policy executable for unbundled output too.
+await copyFile(
+  resolve(root, "packages/store/src/socket-path.cjs"),
+  resolve(root, "dist/packages/store/src/socket-path.cjs"),
+);

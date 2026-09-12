@@ -1,7 +1,7 @@
 # Architecture
 
-Codex Goal Progress adds deterministic checklist progress to one native Codex Goal. The current
-Codex model interprets the Goal. Local code validates every update, stores the Contract, computes
+Codex Goal Progress adds local tracking to an explicitly selected ordinary task or native Codex Goal. The current
+Codex model interprets the requested outcome. Local code validates every update, stores the Contract, computes
 the percentage, and renders the result.
 
 ## Data flow
@@ -125,3 +125,49 @@ Runtime data lives under:
 ```
 
 See [permissions](PERMISSIONS.md) and [support](SUPPORT.md) for the published boundaries.
+
+## Ordinary task tracking
+
+Explicit tracking requests use activation `mode: "task"`. They never create a native Goal or authorize
+another execution turn. The existing default activation mode remains `goal`.
+
+V2 records preserve native compatibility and add a `task` field for ordinary tasks. In that mode,
+`nativeGoal` and `nativeGoalBinding` are null; the trusted thread identity and generated Contract ID
+identify the record. Mixed native/task identities are rejected. Helper remains the sole state writer.
+
+An empty task checklist means scope is unknown: Core projects null progress and the renderer displays
+currentStep, findings, and openQuestions. `goal_progress_explore` replaces those exploration details
+in one versioned event. Once outcomes are known, `rescope` defines the checklist in the same record.
+Exploration cannot complete without a defined accepted result. Checklist completion reaches 95%; an
+explicit completed phase with verified final acceptance evidence reaches 100%. Adding scope clears
+previous final acceptance. Native completion rules are unchanged.
+
+One thread has one current record. An active record cannot be silently overwritten. A completed or
+explicitly detached record may be replaced; replacement events preserve history and the detach fact.
+SessionStart restores active tracking, but grants no execution authority. MCP writes stay compact;
+ordinary-task reads include saved exploration and checklist details for cross-turn recovery.
+
+Ordinary tasks use a standalone draggable floating host even without a native Goal anchor, without
+changing the saved native layout preference. They do not read native Goal Token data or present
+thread-wide Token counts as task usage. Progress updates happen at material milestones; there is
+no background model polling or extra model invocation.
+
+Development acceptance: `pnpm test`, `pnpm build:demo`, then serve the repository locally and open
+`demo/task.html`. The demo uses the real schema, sidecar mount controller and Lit renderer. It does
+not establish compatibility with a running Codex installation by itself.
+
+Recovery checklist output is a read-only page of at most 20 target summaries, with parent IDs,
+weights, state, evidence counts and a bounded last-evidence summary. Use `nextCursor` with get only
+when more target details are needed. A stale cursor requires a fresh first page. Do not write these
+summaries back as full evidence. Unchanged result IDs, titles and states preserve stored evidence
+when rescoping; changing the result requires new supporting evidence. Full events stay local.
+
+## Source installation restart boundary
+
+Ordinary MCP startup, Hook recovery and automatic preparation do not authorize a Codex restart.
+Only an explicit `prepare --restart-codex` / repair invocation can pass restart approval to the
+source setup controller. With CDP unavailable, automatic setup fails with
+`GOAL_PROGRESS_SOURCE_RESTART_REQUIRED` before any restart is scheduled. The source Helper's
+startup observer also returns continue instead of handing off to an application relaunch.
+Local installation uses `--rebuild` so same-version source fixes replace stale compiled code;
+Socket and setup policy digests additionally reject incompatible cached runtimes.

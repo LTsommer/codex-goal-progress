@@ -14,6 +14,7 @@ import {
   statSync,
 } from "node:fs";
 import { appendFile, mkdir, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { createConnection } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
@@ -23,6 +24,22 @@ import { acquireRuntimeLock } from "./runtime-lock.mjs";
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 const pluginRoot = resolve(runtimeRoot, "..");
 const mode = process.argv[2] ?? "prepare";
+
+function sourceCodeRoot() {
+  const packaged = resolve(runtimeRoot, "source");
+  if (existsSync(resolve(packaged, "packages"))) return packaged;
+  const checkout = [pluginRoot, resolve(pluginRoot, "../..")].find((candidate) =>
+    ["packages", "platform", "hooks/src"].every((directory) =>
+      existsSync(resolve(candidate, directory)),
+    ),
+  );
+  if (!checkout) throw new Error("GOAL_PROGRESS_SOURCE_TREE_MISSING");
+  return checkout;
+}
+
+const socketPolicyPath = resolve(sourceCodeRoot(), "packages/store/src/socket-path.cjs");
+const { resolveHelperSocketPath } = createRequire(import.meta.url)(socketPolicyPath);
+
 const minimumNode = [22, 12, 0];
 const requiredPnpmMajor = 11;
 const buildWaitMs = 20 * 60 * 1000;
@@ -187,6 +204,9 @@ function runtimeIsReady(root = versionRoot) {
   if (
     manifest.schemaVersion !== 1 ||
     manifest.releaseVersion !== version ||
+    manifest.socketPolicySha256 !== sha256(socketPolicyPath) ||
+    manifest.setupPolicySha256 !==
+      sha256(resolve(sourceCodeRoot(), "platform/macos/src/source-cdp-policy.ts")) ||
     !manifest.files ||
     typeof manifest.files !== "object"
   ) {
@@ -253,6 +273,20 @@ function resolvePnpm() {
     candidates.push({ command: resolve(pnpmHome, "pnpm"), prefix: [] });
   }
   candidates.push(
+    {
+      command: resolve(
+        pluginDataRoot,
+        "tooling",
+        `pnpm-${String(
+          readJson(resolve(runtimeRoot, "package.json"), "GOAL_PROGRESS_RUNTIME_PACKAGE_INVALID")
+            .packageManager,
+        )
+          .split("@")
+          .at(-1)}`,
+        "node_modules/.bin/pnpm",
+      ),
+      prefix: [],
+    },
     { command: resolve(dirname(process.execPath), "pnpm"), prefix: [] },
     { command: resolve(homedir(), ".local/share/pnpm/pnpm"), prefix: [] },
     { command: resolve(homedir(), ".local/bin/pnpm"), prefix: [] },
@@ -314,23 +348,9 @@ function copyBuildInputs(stagingRoot) {
   ]) {
     cpSync(resolve(runtimeRoot, file), resolve(stagingRoot, file));
   }
-  const packagedSource = resolve(runtimeRoot, "source");
   const destinationSource = resolve(stagingRoot, "source");
-  if (existsSync(resolve(packagedSource, "packages"))) {
-    cpSync(packagedSource, destinationSource, { recursive: true });
-    return;
-  }
   mkdirSync(destinationSource, { recursive: true, mode: 0o700 });
-  const sourceCandidates = [pluginRoot, resolve(pluginRoot, "../..")];
-  const repositoryRoot = sourceCandidates.find(
-    (candidate) =>
-      existsSync(resolve(candidate, "packages")) &&
-      existsSync(resolve(candidate, "platform")) &&
-      existsSync(resolve(candidate, "hooks/src")),
-  );
-  if (!repositoryRoot) {
-    throw new Error("GOAL_PROGRESS_SOURCE_TREE_MISSING");
-  }
+  const repositoryRoot = sourceCodeRoot();
   for (const directory of ["packages", "platform", "hooks"]) {
     cpSync(resolve(repositoryRoot, directory), resolve(destinationSource, directory), {
       recursive: true,
@@ -338,21 +358,21 @@ function copyBuildInputs(stagingRoot) {
   }
 }
 
-async function buildRuntime() {
-  if (runtimeIsReady()) {
+async function buildRuntime(force = false) {
+  if (!force && runtimeIsReady()) {
     return versionRoot;
   }
   const releaseLock = await acquireRuntimeLock(buildLockPath, {
     timeoutMs: buildWaitMs,
     timeoutCode: "GOAL_PROGRESS_SOURCE_BUILD_LOCK_TIMEOUT",
-    ready: () => runtimeIsReady(),
+    ready: () => !force && runtimeIsReady(),
   });
   if (!releaseLock) {
     return versionRoot;
   }
   const stagingRoot = resolve(sourceRuntimeRoot, `.staging-${process.pid}-${randomUUID()}`);
   try {
-    if (runtimeIsReady()) {
+    if (!force && runtimeIsReady()) {
       return versionRoot;
     }
     await log("build-started", { node: process.version });
@@ -451,7 +471,7 @@ function spawnPrepare() {
 }
 
 function sourceHelperReachable(timeoutMs = 150) {
-  const socketPath = resolve(pluginDataRoot, "runtime/helper.sock");
+  const socketPath = resolveHelperSocketPath(pluginDataRoot);
   return new Promise((resolveReachable) => {
     const socket = createConnection(socketPath);
     let settled = false;
@@ -480,7 +500,7 @@ function fallbackLegacy(targetMode) {
   return true;
 }
 
-async function ensureSourceSetup(root) {
+async function ensureSourceSetup(root, restartCodex = false) {
   if (process.env.GOAL_PROGRESS_SOURCE_SKIP_SETUP === "1") {
     return;
   }
@@ -489,12 +509,16 @@ async function ensureSourceSetup(root) {
     timeoutCode: "GOAL_PROGRESS_SOURCE_SETUP_LOCK_TIMEOUT",
   });
   try {
-    const result = spawnSync(resolve(root, "bin/goal-progress"), ["__source-runtime-ensure"], {
-      encoding: "utf8",
-      env: runtimeEnvironment(root),
-      timeout: 120_000,
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    const result = spawnSync(
+      resolve(root, "bin/goal-progress"),
+      ["__source-runtime-ensure", ...(restartCodex ? ["--restart-codex"] : [])],
+      {
+        encoding: "utf8",
+        env: runtimeEnvironment(root),
+        timeout: 120_000,
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    );
     if (result.status !== 0) {
       const detail = `${result.stderr ?? ""}
 ${result.stdout ?? ""}`
@@ -540,14 +564,24 @@ async function main() {
 
   if (mode === "prepare") {
     try {
-      const root = await buildRuntime();
-      await ensureSourceSetup(root);
+      const root = await buildRuntime(process.argv.includes("--rebuild"));
+      await ensureSourceSetup(root, process.argv.includes("--restart-codex"));
       await log("prepare-completed");
     } catch (error) {
       await log("prepare-failed", { code: errorCode(error) });
       process.stderr.write(`${errorCode(error)}\n`);
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (mode === "startup-recovery") {
+    const root = await buildRuntime();
+    runAttached(
+      resolve(root, "bin/goal-progress"),
+      process.argv.slice(2),
+      runtimeEnvironment(root),
+    );
     return;
   }
 
@@ -570,7 +604,7 @@ async function main() {
 
   if (mode === "repair") {
     const root = await buildRuntime();
-    await ensureSourceSetup(root);
+    await ensureSourceSetup(root, process.argv.includes("--restart-codex"));
     runAttached(resolve(root, "bin/goal-progress"), ["verify", "--json"], runtimeEnvironment(root));
     return;
   }

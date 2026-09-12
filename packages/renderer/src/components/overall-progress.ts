@@ -2,8 +2,10 @@ import { html, nothing } from "lit";
 import type { GoalProgressViewModel } from "../../../contracts/src/index.js";
 import type { GoalProgressMessages } from "../locale.js";
 import { renderParticles, renderSparkles } from "./motion-effects.js";
+import { taskLabels } from "./task.js";
 
 export interface OverallProgressRenderOptions {
+  readonly locale?: string;
   readonly compact: boolean;
   readonly collapsed: boolean;
   readonly toggleDisabled?: boolean;
@@ -19,7 +21,20 @@ export function renderOverallProgress(
 ) {
   const percent = viewModel.overallPercent;
   if (percent === null) {
-    return nothing;
+    if (!viewModel.task) return nothing;
+    const labels = taskLabels(options.locale ?? "en");
+    const status =
+      viewModel.trackingPhase === "completed"
+        ? labels.completed
+        : viewModel.trackingPhase === "paused"
+          ? labels.paused
+          : viewModel.trackingPhase === "blocked"
+            ? labels.blocked
+            : labels.scope;
+    return html`<section class="overall compact task-exploration" aria-label=${labels.title}><div class="overall-rail">
+      <span class="overall-label">${labels.title}</span><strong>${status}</strong>
+      <button class="icon-button collapse-toggle" type="button" aria-expanded=${String(!options.collapsed)} aria-label=${options.collapsed ? labels.expand : labels.collapse} ?disabled=${options.toggleDisabled} @click=${options.onToggleCollapsed}>${options.collapsed ? "▴" : "▾"}</button>
+    </div></section>`;
   }
   return html`
     <section

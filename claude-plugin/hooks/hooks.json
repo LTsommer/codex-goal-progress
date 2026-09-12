@@ -1,0 +1,1 @@
+{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/bin/goal-progress\" hook","timeout":10}]}],"PreToolUse":[{"matcher":"^mcp__plugin_goal-progress_goal_progress__goal_progress_(activate|initialize|get|explore|update|rescope|set_phase)$","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/bin/goal-progress\" hook","timeout":10}]}]}}
