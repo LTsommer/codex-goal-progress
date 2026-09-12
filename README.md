@@ -10,6 +10,36 @@
   </p>
 </div>
 
+## Development workflow for this fork
+
+This repository is a maintained fork of
+[ezra-y/codex-goal-progress](https://github.com/ezra-y/codex-goal-progress).
+For this fork, `upstream` points to the original repository and `origin` points
+to the fork.
+
+For each new change:
+
+1. Update the local `main` baseline from this fork:
+
+   ```sh
+   git switch main
+   git fetch origin --prune
+   git merge --ff-only origin/main
+   ```
+
+2. Create a new branch from the updated `main` branch:
+
+   ```sh
+   git switch -c lt/<feature-name>
+   ```
+
+3. Develop and verify the change on that branch. Before opening a pull request,
+   ensure the branch contains one English commit using the format
+   `[type][module]: concise English summary`.
+4. Push the branch and open a pull request to `main`.
+
+Do not continue new work on a branch that has already been merged.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/Ezra-Y/codex-goal-progress/0911a93fa55162333c6c772bde478fab29af2660/docs/assets/codex-goal-progress-demo.gif" alt="Codex Goal Progress in action">
 </p>
