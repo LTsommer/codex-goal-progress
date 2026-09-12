@@ -10,6 +10,33 @@
   </p>
 </div>
 
+## 此 Fork 的开发流程
+
+本仓库是 [ezra-y/codex-goal-progress](https://github.com/ezra-y/codex-goal-progress)
+的维护 Fork。此 Fork 中，`upstream` 指向原仓库，`origin` 指向本 Fork。
+
+每项新改动均按以下流程进行：
+
+1. 从本 Fork 同步本地 `main` 基线：
+
+   ```sh
+   git switch main
+   git fetch origin --prune
+   git merge --ff-only origin/main
+   ```
+
+2. 从已更新的 `main` 创建新的开发分支：
+
+   ```sh
+   git switch -c lt/<feature-name>
+   ```
+
+3. 在该分支上开发并验证。创建 PR 前，确保分支只有一条英文提交，格式为
+   `[type][module]: concise English summary`。
+4. 推送该分支，并向 `main` 创建 PR。
+
+已经合并的分支不再继续承载新的开发工作。
+
 <p align="center">
   <img src="docs/assets/codex-goal-progress-demo.gif" alt="Codex Goal Progress 演示">
 </p>
