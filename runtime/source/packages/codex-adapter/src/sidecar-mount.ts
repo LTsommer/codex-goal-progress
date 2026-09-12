@@ -523,7 +523,7 @@ export class SidecarMountController {
     }
 
     this.#nativeGoalRejectionReason = options.nativeGoalRejectionReason ?? null;
-    if (options.displayTarget.kind === "fallback") {
+    if (viewModel.task || options.displayTarget.kind === "fallback") {
       return this.#ensureFallbackMounted(
         viewModel,
         uiPreference,
@@ -737,7 +737,7 @@ export class SidecarMountController {
     const threadChanged = this.#sessionId !== null && this.#sessionId !== viewModel.sessionId;
     const nativeOriginWasVerified =
       this.#displayMode === "native" || this.#displayMode === "fallback";
-    if (!existingHost || threadChanged || !nativeOriginWasVerified) {
+    if (!viewModel.task && (!existingHost || threadChanged || !nativeOriginWasVerified)) {
       if (existingHost) {
         this.#adoptHost(existingHost);
       }
@@ -753,8 +753,14 @@ export class SidecarMountController {
         this.#nativeGoalRejectionReason,
       );
     }
-    const host = existingHost;
-    const action: SidecarMountAction = "updated";
+    if (viewModel.task && (threadChanged || !existingHost)) {
+      this.#releaseHost(true);
+      existingHost = null;
+    }
+    const host =
+      existingHost ?? (this.#document.createElement(this.#elementName) as GoalProgressHostElement);
+    host.setAttribute(GOAL_PROGRESS_HOST_ATTRIBUTE, GOAL_PROGRESS_HOST_ATTRIBUTE_VALUE);
+    const action: SidecarMountAction = existingHost ? "updated" : "mounted";
     this.#adoptHost(host);
     this.#syncNativeTitleFontWeight(null);
     syncHostLocale(host, this.#document);
@@ -775,6 +781,12 @@ export class SidecarMountController {
       host.hidden = uiPreference.hidden;
       host.requestedPlacement = uiPreference.placement;
       host.floatingXRatio = this.#requestedFloatingXRatio;
+    }
+    // Ordinary tasks have no native Goal anchor; this is a local presentation
+    // decision and must not write the user's saved placement preference.
+    if (viewModel.task) {
+      this.#requestedPlacement = "floating";
+      host.requestedPlacement = "floating";
     }
     const canRetainInlineOrigin =
       this.#requestedPlacement === "inline" &&
@@ -1223,6 +1235,24 @@ export class SidecarMountController {
     host.style.pointerEvents = "auto";
     host.style.marginBlockStart = "";
     host.style.removeProperty("--gp-native-title-font-weight");
+    if (host.viewModel?.task && view) {
+      // A task owns a viewport-wide drag surface, independent of any Goal row.
+      const width = Math.max(0, view.innerWidth - 32);
+      const chipWidth = Math.min(320, Math.max(0, width - 20));
+      const panelWidth = Math.min(420, Math.max(0, width - 20));
+      const ratio = this.#floatingPreviewRatio ?? this.#requestedFloatingXRatio;
+      const center = chipWidth / 2 + ratio * Math.max(0, width - chipWidth);
+      const panelCenter = Math.max(panelWidth / 2, Math.min(width - panelWidth / 2, center));
+      host.style.insetInlineEnd = "";
+      host.style.left = "16px";
+      host.style.width = `${width}px`;
+      host.style.pointerEvents = "none";
+      host.style.setProperty("--gp-floating-chip-center", `${center}px`);
+      host.style.setProperty("--gp-floating-panel-center", `${panelCenter}px`);
+      this.#floatingActive = true;
+      view.addEventListener("resize", this.#onWindowResize);
+      view.addEventListener("scroll", this.#onWindowScroll, true);
+    }
     this.#clearMeasuredInlineGeometry();
     this.#layoutWriteCount += 1;
   }
@@ -1496,6 +1526,10 @@ export class SidecarMountController {
 
   #applyFloatingLayout(): void {
     const host = this.#host;
+    if (host?.viewModel?.task && this.#displayMode === "fallback") {
+      this.#applyFallbackLayout();
+      return;
+    }
     const anchor = this.#anchor;
     const view = this.#document.defaultView;
     if (!host || !anchor || !view || host.placement !== "floating") {

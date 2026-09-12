@@ -3,7 +3,7 @@
     <img src="https://raw.githubusercontent.com/Ezra-Y/codex-goal-progress/main/docs/assets/codex-goal-progress-logo.png" alt="Codex Goal Progress 标志" width="130"><br>
     Codex Goal Progress
   </h1>
-  <p>为 Codex 原生 Goal 提供由已验证清单和本地进度追踪驱动的进度条。</p>
+  <p>为普通任务和 Codex 原生 Goal 提供本地探索记录与清单进度。</p>
   <p>
     <a href="https://github.com/Ezra-Y/codex-goal-progress/blob/main/README.md">English</a> ·
     <strong>简体中文</strong>
@@ -39,6 +39,25 @@
 
 ## 🚀 快速开始
 
+### Claude Code（命令行／IDE）
+
+本地开发版已加入 Claude Code 适配：通过 `/goal-progress:track` 启动普通任务跟踪，
+支持同会话恢复与终端状态栏。范围未知时显示探索状态，不猜百分比。
+IDE 可使用相同 Skill 和 MCP 工具；首版没有原生 IDE 图形状态栏。
+
+安装好 Claude Code 和 Node.js 22.12+ 后，在本仓库执行：
+
+```sh
+pnpm build:claude
+sh ./install-claude.sh
+```
+
+已有构建产物时，只需执行 `sh ./dist/claude-marketplace/install-claude.sh`。
+安装器会先备份配置，保留已有命令状态栏。随后在 Claude Code 执行 `/reload-plugins`，
+再用 `/goal-progress:track 你的任务` 启动。
+详见 [Claude Code 安装、使用与验收](docs/CLAUDE-CODE.md)。
+下方原仓库的 Codex Release 下载命令尚不包含这份未发布的 Claude 适配。
+
 ### 从插件市场安装
 
 源码插件需要 Apple Silicon Mac、Codex Desktop、Node.js 22.12 或更高版本和 pnpm 11。
@@ -52,6 +71,44 @@
 ```text
 请按照仓库中的 INSTALL-FOR-AI.md，安装并验证 https://github.com/Ezra-Y/codex-goal-progress。
 ```
+
+### 安装本地修改版
+
+在本仓库目录执行 `sh ./install-local.sh`，或在 Finder 双击 `install-local.command`。
+脚本先确认安装及可能发生的 Codex 重启，再备份现有 `config.toml`、注册本地市场、
+安装插件、初始化 Helper 并运行 Doctor / Verify。`sh ./install-local.sh --check` 只读检查前置条件，缺少指定版本的 pnpm 时返回失败。
+正式安装在取得确认后、注册插件前准备 `runtime/package.json` 指定的 pnpm 版本：优先复用已有版本，缺少时通过 npm 安装到插件数据目录的 `tooling/pnpm-<版本>`，不修改全局 pnpm。需要 Node.js 自带的 npm 可用。
+此入口安装本地源码，包含普通任务跟踪扩展；首次初始化需要联网准备依赖。
+安装时的重启授权只对当次安装生效。MCP、Hook 和对话恢复不会自行重启 Codex。
+CDP 暂时不可用时，Helper 和进度工具仍可读写记录；界面连接状态单独报告。
+
+### 更新或重启后的自动恢复
+
+源码插件默认关闭自动启动接管。需要在 Codex 更新或普通重启后自动恢复进度界面时，
+可明确授权以下命令（在已安装插件目录执行）：
+
+```sh
+sh runtime/run-bootstrap.sh startup-recovery enable
+sh runtime/run-bootstrap.sh startup-recovery status
+# 撤销后，未来启动不会再自动接管；不结束当前应用。
+sh runtime/run-bootstrap.sh startup-recovery disable
+```
+
+此授权持久保存，并限定于授权时验证的应用路径、bundle ID 和签名团队。
+启用命令本身不重启应用。以后监听器在安全启动窗口内，可以替换刚启动的普通进程，
+带本机调试参数启动应用并恢复界面；即使没有未完成任务，也可恢复插件可用性。
+它不允许在错过启动窗口后结束已经在使用的应用，也不允许循环重启。
+应用身份不匹配、监听器未及时就绪或不兼容版本导致恢复失败时，工具服务保持独立，
+UI 会处于未连接状态；不能保证任何未来版本的界面结构均无需适配。
+
+Doctor / Verify 的 `toolsReady` 表示运行文件与 Helper 服务就绪，`uiConnectionReady` 表示
+CDP 连接校验通过；后者不代替进度组件的截图验收。整体 `ok` 仍要求完整健康检查通过。
+已有普通进程需要当次恢复时，先取得重启授权，再执行
+`sh runtime/run-bootstrap.sh repair --restart-codex`。
+
+启动日志中的 `startup.handoff` 只记录应用接管结果；接管成功后的界面恢复错误单独记为
+`startup.ui-recovery / STARTUP_UI_RECOVERY_FAILED`，并保留 `causeCode`。可重试的连接错误
+沿用有限重试，签名或应用身份拒绝不会由这条恢复路径重试。
 
 ### 从预构建包安装
 
@@ -75,11 +132,20 @@ sh /tmp/codex-goal-progress-install.sh
 
 ## 🎯 如何使用
 
-打开一个原生 Codex Goal，然后选择 **Goal Progress** Skill。
+本地扩展支持普通任务和原生 Goal 两种跟踪方式。选择 **Goal Progress** Skill，或明确说
+“用 Goal Progress 跟踪这个任务，先调查清楚范围”。普通任务不需要创建 Goal。
 
-当前 Codex 模型会整理或复用该 Goal 的 Checklist，并创建本地进度记录。
+- **范围还不清楚**：记录当前调查、已确认事实和待明确问题，不显示百分比。
+- **验收范围明确**：建立清单，以完成结果计算进度；阶段性批量更新，不逐次工具调用更新。
+- **下次继续**：恢复同一任务保存的清单和证据，不重建；恢复进度本身不授权继续执行。
+- **完成**：必需结果完成后提交最终验收证据，才达到 100%。未知范围不能直接标为完成。
 
-每个新 Goal 需要单独启用 Goal Progress。普通 Goal 继续使用 Codex 原生流程。
+普通任务进度默认显示为可拖动浮层，不显示归属不明确的 Token 用量。跟踪不会触发自动续跑、
+后台模型轮询或创建隐藏任务，也不是 Token 硬限额控制器。只有明确启用的任务才跟踪。
+原生 Goal 跟踪仍保留原有绑定与完成规则。
+
+开发验收：运行 `pnpm test`、`pnpm build:demo`，通过本地静态服务打开 `demo/task.html`。
+示例使用真实展示组件，不会发送消息、创建 Goal 或安装插件。
 
 ## 🌓 进度状态与主题
 

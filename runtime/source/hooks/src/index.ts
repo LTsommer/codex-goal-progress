@@ -15,7 +15,7 @@ import {
 import { resolveGoalProgressPaths } from "../../packages/store/src/index.js";
 
 export const GOAL_PROGRESS_TOOL_PATTERN =
-  "^(?:goal_progress_|.*[^A-Za-z0-9]goal_progress[^A-Za-z0-9]+goal_progress_)(?:activate|initialize|get|update|rescope|set_phase)$";
+  "^(?:goal_progress_|.*[^A-Za-z0-9]goal_progress[^A-Za-z0-9]+goal_progress_)(?:activate|initialize|get|update|explore|rescope|set_phase)$";
 export const GOAL_PROGRESS_TOOL_MATCHER = new RegExp(GOAL_PROGRESS_TOOL_PATTERN);
 export const GOAL_PROGRESS_POST_TOOL_PATTERN = "^update_goal$";
 export const GOAL_PROGRESS_HOOK_STDIN_PROTOCOL_VERSION = 1 as const;
@@ -37,7 +37,7 @@ export const GOAL_PROGRESS_HOOK_EVENT_POLICY = Object.freeze({
   }),
 });
 export const GOAL_PROGRESS_RESUME_CONTEXT =
-  "Goal Progress is active for this session. Continue automatically: load Goal Progress tools with tool_search if deferred, call goal_progress_get before writes, and do not ask the user to invoke the Skill again.";
+  "Goal Progress is active for this session. Restore tracking with goal_progress_get when resuming work. Reuse saved state and update only on material changes. Tracking does not authorize further execution or create a Goal. Do not ask for the Skill again.";
 const GOAL_PROGRESS_AUDIT_CLIENT_TIMEOUT_MS = 100;
 const GOAL_PROGRESS_AUDIT_MAX_WAIT_MS = 150;
 export const GOAL_PROGRESS_RESUME_CLIENT_TIMEOUT_MS = 25;

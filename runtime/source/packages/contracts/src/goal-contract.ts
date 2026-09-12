@@ -78,6 +78,30 @@ export const GoalEvidenceSchema = z
   })
   .strict();
 
+export const GoalExplorationUpdateSchema = z
+  .object({
+    currentStep: z.string().trim().max(2_000),
+    findings: z.array(NonEmptyTextSchema.max(500)).max(20),
+    openQuestions: z.array(NonEmptyTextSchema.max(500)).max(20),
+  })
+  .strict();
+
+export const GoalExplorationSchema = z
+  .object({
+    currentStep: GoalExplorationUpdateSchema.shape.currentStep.default(""),
+    findings: GoalExplorationUpdateSchema.shape.findings.default([]),
+    openQuestions: GoalExplorationUpdateSchema.shape.openQuestions.default([]),
+  })
+  .strict();
+
+export const GoalTaskInitializationSchema = GoalExplorationSchema.extend({
+  objective: NonEmptyTextSchema.max(GOAL_NATIVE_OBJECTIVE_MAX_LENGTH),
+}).strict();
+
+export const GoalTaskSchema = GoalTaskInitializationSchema.extend({
+  completionEvidence: GoalEvidenceSchema.optional(),
+}).strict();
+
 export const GoalChecklistItemSchema = z
   .object({
     id: GoalChecklistItemIdSchema,
@@ -88,6 +112,29 @@ export const GoalChecklistItemSchema = z
   .strict();
 
 export const GoalObjectiveRequirementSchema = z.enum(["required", "optional"]);
+
+// A bounded recovery summary, never a replacement for the persisted checklist.
+export const GoalChecklistRecoveryItemSchema = z
+  .object({
+    id: GoalProgressTargetIdSchema,
+    title: NonEmptyTextSchema.max(500),
+    status: GoalProgressItemStatusSchema,
+    parentId: GoalObjectiveIdSchema.nullable(),
+    requirement: GoalObjectiveRequirementSchema.optional(),
+    contributionBps: z.number().int().min(0).max(GOAL_PROGRESS_BPS_TOTAL).optional(),
+    contributionReason: z.string().max(500).optional(),
+    evidenceCount: z.number().int().nonnegative(),
+    lastEvidence: z
+      .object({
+        id: z.string().min(1).max(128),
+        summary: z.string().max(160),
+        verification: z.enum(["reported", "verified"]),
+        reference: z.string().max(256).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 export const GoalObjectiveV1Schema = z
   .object({
@@ -380,8 +427,9 @@ export const GoalContractV2Schema = z
     sessionId: z.string().trim().min(1).max(256),
     sessionTreeId: z.string().trim().min(1).max(256),
     threadId: z.string().trim().min(1).max(256),
-    nativeGoalBinding: NativeGoalBindingSchema,
-    nativeGoal: GoalContractNativeGoalSchema,
+    nativeGoalBinding: NativeGoalBindingSchema.nullable(),
+    nativeGoal: GoalContractNativeGoalSchema.nullable(),
+    task: GoalTaskSchema.optional(),
     phase: GoalProgressPhaseSchema,
     revision: z.number().int().nonnegative(),
     scopeRevision: z.number().int().nonnegative(),
@@ -394,6 +442,18 @@ export const GoalContractV2Schema = z
   })
   .strict()
   .superRefine((contract, context) => {
+    if (
+      contract.task
+        ? contract.nativeGoal !== null || contract.nativeGoalBinding !== null
+        : contract.nativeGoal === null || contract.nativeGoalBinding === null
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Task tracking requires null native bindings; native tracking requires both bindings and no task",
+        path: ["task"],
+      });
+    }
     if (contract.sessionId !== contract.threadId) {
       context.addIssue({
         code: "custom",
@@ -401,7 +461,7 @@ export const GoalContractV2Schema = z
         path: ["sessionId"],
       });
     }
-    if (contract.nativeGoalBinding.threadId !== contract.threadId) {
+    if (contract.nativeGoalBinding && contract.nativeGoalBinding.threadId !== contract.threadId) {
       context.addIssue({
         code: "custom",
         message: "nativeGoalBinding.threadId must match contract.threadId",
@@ -495,6 +555,7 @@ export const GoalContractV2Schema = z
     }
     if (
       contract.objectives.length === 0 &&
+      !contract.task &&
       contract.phase !== "preparing" &&
       contract.phase !== "error"
     ) {
@@ -546,7 +607,21 @@ export const GoalContractV2Schema = z
       });
     }
     if (contract.phase === "completed") {
-      if (contract.nativeGoal.status !== "complete") {
+      if (contract.task && contract.objectives.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: "A completed task requires a defined acceptance checklist",
+          path: ["objectives"],
+        });
+      }
+      if (contract.task && contract.task.completionEvidence?.verification !== "verified") {
+        context.addIssue({
+          code: "custom",
+          message: "A completed task requires verified final acceptance evidence",
+          path: ["task", "completionEvidence"],
+        });
+      }
+      if (!contract.task && contract.nativeGoal?.status !== "complete") {
         context.addIssue({
           code: "custom",
           message: "A completed contract requires a complete native Goal",
@@ -598,12 +673,17 @@ export const GoalProgressCommandMetadataSchema = z
 export const GoalContractInitializationSchema = z
   .object({
     contractId: GoalContractIdSchema,
+    task: GoalTaskInitializationSchema.optional(),
     source: GoalProgressSourceSchema,
     objectives: z.array(GoalObjectiveSchema).max(100),
   })
   .strict();
 
 export const GoalProgressCommandSchema = z.discriminatedUnion("type", [
+  GoalProgressCommandMetadataSchema.extend({
+    type: z.literal("update-exploration"),
+    ...GoalExplorationUpdateSchema.shape,
+  }).strict(),
   GoalProgressCommandMetadataSchema.extend({
     type: z.literal("update-items"),
     changes: z.array(GoalProgressItemChangeSchema).min(1).max(500),
@@ -625,6 +705,7 @@ export const GoalProgressCommandSchema = z.discriminatedUnion("type", [
   GoalProgressCommandMetadataSchema.extend({
     type: z.literal("set-phase"),
     phase: GoalProgressPhaseSchema,
+    verification: GoalEvidenceSchema.optional(),
   }).strict(),
   GoalProgressCommandMetadataSchema.extend({
     type: z.literal("sync-native-goal"),
@@ -649,6 +730,10 @@ const GoalProgressEventEnvelopeSchema = z.object({
 
 export const GoalProgressEventSchema = z.discriminatedUnion("type", [
   GoalProgressEventEnvelopeSchema.extend({
+    type: z.literal("contract.exploration-updated"),
+    payload: GoalExplorationUpdateSchema,
+  }).strict(),
+  GoalProgressEventEnvelopeSchema.extend({
     type: z.literal("contract.initialized"),
     payload: z.object({ contract: z.union([GoalContractV1Schema, GoalContractV2Schema]) }).strict(),
   }).strict(),
@@ -659,6 +744,7 @@ export const GoalProgressEventSchema = z.discriminatedUnion("type", [
       .object({
         previousContractId: GoalContractIdSchema,
         previousRevision: z.number().int().nonnegative(),
+        previousDetached: z.boolean().optional(),
         contract: GoalContractV2Schema,
       })
       .strict(),
@@ -698,7 +784,9 @@ export const GoalProgressEventSchema = z.discriminatedUnion("type", [
   }).strict(),
   GoalProgressEventEnvelopeSchema.extend({
     type: z.literal("contract.phase-changed"),
-    payload: z.object({ phase: GoalProgressPhaseSchema }).strict(),
+    payload: z
+      .object({ phase: GoalProgressPhaseSchema, verification: GoalEvidenceSchema.optional() })
+      .strict(),
   }).strict(),
   GoalProgressEventEnvelopeSchema.extend({
     type: z.literal("native-goal.synced"),
@@ -780,6 +868,7 @@ export const GoalProgressViewModelSchema = z
     revision: z.number().int().nonnegative(),
     scopeRevision: z.number().int().nonnegative(),
     trackingPhase: GoalProgressTrackingPhaseSchema,
+    task: GoalTaskSchema.optional(),
     blockedReason: GoalNativeBlockedReasonSchema.optional(),
     preparingStep: z
       .enum(["reading-goal", "preparing-checklist", "establishing-baseline"])
@@ -826,6 +915,24 @@ export const GoalProgressViewModelSchema = z
         path: ["scopeRevision"],
       });
     }
+    const exploring =
+      !!viewModel.task &&
+      viewModel.objectives.length === 0 &&
+      viewModel.optionalObjectives.length === 0;
+    if (viewModel.task && viewModel.token) {
+      context.addIssue({
+        code: "custom",
+        message: "Task tracking cannot expose native Goal token usage",
+        path: ["token"],
+      });
+    }
+    if (exploring && (viewModel.overallPercent !== null || viewModel.overallProgressBps !== null)) {
+      context.addIssue({
+        code: "custom",
+        message: "Exploration has no progress denominator",
+        path: ["overallPercent"],
+      });
+    }
     const hasProgress = viewModel.overallProgressBps !== null && viewModel.overallPercent !== null;
     const tracksProgress =
       viewModel.trackingPhase === "active" ||
@@ -834,7 +941,7 @@ export const GoalProgressViewModelSchema = z
       viewModel.trackingPhase === "completed";
     if (
       (viewModel.overallProgressBps === null) !== (viewModel.overallPercent === null) ||
-      (tracksProgress && !hasProgress) ||
+      (tracksProgress && !hasProgress && !exploring) ||
       (!tracksProgress && viewModel.trackingPhase !== "error" && hasProgress)
     ) {
       context.addIssue({
@@ -959,3 +1066,12 @@ export function parseGoalContractAny(input: unknown) {
   }
   return GoalContractV1Schema.safeParse(input);
 }
+
+export type GoalTask = z.infer<typeof GoalTaskSchema>;
+export function isTaskContract(
+  contract: GoalContractAny,
+): contract is GoalContractV2 & { task: GoalTask; nativeGoal: null; nativeGoalBinding: null } {
+  return contract.schemaVersion === 2 && contract.task !== undefined;
+}
+
+export type GoalChecklistRecoveryItem = z.infer<typeof GoalChecklistRecoveryItemSchema>;

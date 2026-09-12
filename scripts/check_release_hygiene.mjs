@@ -157,7 +157,7 @@ export async function assertMacosReleaseTree(root) {
 export async function assertReleaseHygiene(root = repoRoot) {
   await assertReleaseVersions(root);
   await assertReleaseTree(resolve(root, "plugins/codex-goal-progress"), "Plugin package");
-  for (const optional of ["dist/plugin", "dist/renderer"]) {
+  for (const optional of ["dist/plugin", "dist/renderer", "dist/claude-marketplace"]) {
     try {
       await stat(resolve(root, optional));
     } catch {

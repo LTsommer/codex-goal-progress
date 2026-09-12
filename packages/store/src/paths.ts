@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { GoalProgressStoreError } from "./errors.js";
+import { resolveHelperSocketPath } from "./socket-path.cjs";
 
 export interface GoalProgressPathOptions {
   readonly root?: string;
@@ -76,7 +77,7 @@ export function resolveGoalProgressPaths(options: GoalProgressPathOptions = {}):
     preferencesRoot,
     installRoot,
     programReleasesRoot,
-    helperSocketPath: resolve(runtimeRoot, "helper.sock"),
+    helperSocketPath: resolveHelperSocketPath(root, options.platform),
     helperLocksRoot: resolve(runtimeRoot, "helper-locks"),
     helperPidPath: resolve(runtimeRoot, "helper.pid.json"),
     runtimeProofKeyPath: resolve(runtimeRoot, "runtime-context.key"),

@@ -1,6 +1,6 @@
 interface:
   display_name: "Goal Progress"
-  short_description: "Track one native Goal with verified progress"
+  short_description: "Track an ordinary task or native Goal"
   default_prompt: "$codex-goal-progress:goal-progress"
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

@@ -97,3 +97,42 @@ contributions so required non-cancelled objectives total `10000`. Preserve IDs f
 results.
 
 Never send `overallProgress`, `overallPercent`, weights in a normal update, or a new session ID.
+
+## Ordinary task with unknown scope
+
+Activate with `{"mode":"task"}`, then initialize without a native Goal:
+
+```json
+{
+  "source": "model-generated",
+  "objectives": [],
+  "task": {
+    "objective": "Determine the cause and affected scope",
+    "currentStep": "Inspect the failing call chain",
+    "findings": [],
+    "openQuestions": ["Which module owns the incorrect value?"]
+  }
+}
+```
+
+Use `goal_progress_explore` for batched findings with contractId/expectedRevision. It replaces all
+three exploration fields, so retain prior confirmed findings. Use `goal_progress_rescope` to define
+acceptance outcomes when scope is known. No percentage is inferred from investigation steps.
+
+For final ordinary-task completion, use `goal_progress_set_phase` with phase `completed` and a
+`verification` evidence object, for example:
+
+```json
+{
+  "id": "acceptance-1",
+  "kind": "test",
+  "verification": "verified",
+  "summary": "Targeted acceptance tests passed for all agreed outcomes",
+  "reference": "test-results/acceptance.txt",
+  "observedAt": "2026-09-09T12:00:00Z",
+  "source": "model"
+}
+```
+
+Supply actual observed evidence, not this example as a claim. Helper records the model as the
+source; this is not an independent local-validator attestation.

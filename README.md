@@ -40,6 +40,26 @@ progress, overall progress, and Token usage attributable to that Goal.
 
 ## 🚀 Quick start
 
+### Claude Code (CLI / IDE)
+
+Claude Code support is available in this local development version. It provides
+`/goal-progress:track`, session-scoped task recovery, and a terminal status line.
+Unknown scope shows exploration without a guessed percentage. IDE users can use
+the same Skill and MCP tools; a native IDE graphical status bar is not included.
+
+With Claude Code and Node.js 22.12+ installed, run from this checkout:
+
+```sh
+pnpm build:claude
+sh ./install-claude.sh
+```
+
+For an already built distribution, run `sh ./dist/claude-marketplace/install-claude.sh`.
+The installer backs up settings and preserves an existing command status line.
+Run `/reload-plugins`, then `/goal-progress:track` followed by your task.
+See [Claude Code installation, usage and verification](docs/CLAUDE-CODE.md).
+The upstream Codex release installer below does not contain this unpublished adaptation.
+
 ### Install from a plugin marketplace
 
 The source plugin requires an Apple Silicon Mac, Codex Desktop, Node.js 22.12 or newer,
@@ -66,6 +86,28 @@ installer. If Codex must restart, the script asks first.
 
 After installation, reopen Codex when requested, then open a new task so the new Plugin session
 loads.
+
+## Source-plugin recovery after an app restart
+
+MCP and Helper storage remain available without a UI/CDP connection. An installation's one-time
+restart approval does not grant ongoing process-control permission. Automatic startup recovery is
+disabled by default. From the installed plugin directory, explicitly opt in or revoke it with:
+
+```sh
+sh runtime/run-bootstrap.sh startup-recovery enable
+sh runtime/run-bootstrap.sh startup-recovery status
+sh runtime/run-bootstrap.sh startup-recovery disable
+```
+
+Consent is persistent and bound to the verified app path, bundle ID and signing team. Enabling it
+does not itself restart the app. At a later launch, the existing listener may replace the newly
+started process within its safe startup window and relaunch it with local debugging enabled,
+including when no unfinished progress exists. It cannot kill an app after that window or keep
+restarting it. Missed startup events and incompatible future app versions may leave UI disconnected
+while the tools remain available. Doctor/Verify report `toolsReady`, `uiConnectionReady` and `cdpCode`
+separately; connection readiness is not a visual acceptance test. Overall `ok` still requires the
+complete health check. An already-running ordinary app requires explicit restart approval before
+`sh runtime/run-bootstrap.sh repair --restart-codex`.
 
 ## 🛠️ Requirements
 
@@ -142,3 +184,17 @@ for the exact scope and removal steps.
 For source installations, **Check for updates** queries the published GitHub release. **View update notes** opens its release notes; install the update through the Codex plugin marketplace. It does not silently switch to a prebuilt Helper.
 
 To remove a source installation, ask Codex to uninstall Goal Progress. The `goal_progress_uninstall` tool removes this source plugin, its Helper and its progress data. It keeps native Goals, other plugins and the shared marketplace. The first response reports that removal has started; the final result is recorded in `CODEX_HOME/logs/goal-progress-uninstall.log`.
+
+## Ordinary task tracking (local extension)
+
+Explicitly ask Goal Progress to track the current task, even without a native Goal. Unknown scope
+shows current investigation, confirmed findings and open questions without a percentage. Once
+acceptance outcomes are clear, rescope the same record into a checklist. Restore saved state across
+turns instead of rebuilding it. Required outcomes plus explicit final acceptance evidence complete
+the task. Tracking never creates a Goal, schedules another model turn, or grants execution authority.
+
+Ordinary tasks use a draggable floating view and omit unowned Token counts. Existing native Goal
+behavior remains supported. See [Architecture](docs/ARCHITECTURE.md#ordinary-task-tracking).
+
+Run `pnpm test` and `pnpm build:demo`, then serve the repository locally and open `demo/task.html`
+for a real-component preview. This preview does not install or restart Codex.

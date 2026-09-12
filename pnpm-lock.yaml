@@ -46,6 +46,8 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
 
+  packages/claude-code: {}
+
   packages/codex-adapter: {}
 
   packages/contracts: {}

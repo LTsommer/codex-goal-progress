@@ -7,7 +7,10 @@ import { z } from "zod";
 import {
   GOAL_NATIVE_OBJECTIVE_MAX_LENGTH,
   GOAL_PROGRESS_RELEASE_VERSION,
+  GoalChecklistRecoveryItemSchema,
   GoalContractIdSchema,
+  GoalEvidenceSchema,
+  GoalExplorationUpdateSchema,
   GoalObjectiveIdSchema,
   GoalObjectiveSchema,
   GoalProgressItemChangeSchema,
@@ -16,6 +19,8 @@ import {
   GoalProgressTargetIdSchema,
   type GoalProgressViewModel,
   GoalProgressViewModelSchema,
+  GoalTaskInitializationSchema,
+  GoalTaskSchema,
   RuntimeContextArgumentSchema,
   RuntimeProofArgumentSchema,
 } from "../../contracts/src/index.js";
@@ -41,6 +46,7 @@ export const GOAL_PROGRESS_INITIALIZE_TOOL_NAME = "goal_progress_initialize";
 export const GOAL_PROGRESS_ACTIVATE_TOOL_NAME = "goal_progress_activate";
 export const GOAL_PROGRESS_GET_TOOL_NAME = "goal_progress_get";
 export const GOAL_PROGRESS_UPDATE_TOOL_NAME = "goal_progress_update";
+export const GOAL_PROGRESS_EXPLORE_TOOL_NAME = "goal_progress_explore";
 export const GOAL_PROGRESS_RESCOPE_TOOL_NAME = "goal_progress_rescope";
 export const GOAL_PROGRESS_SET_PHASE_TOOL_NAME = "goal_progress_set_phase";
 
@@ -88,6 +94,9 @@ export const GoalProgressToolOutputSchema = z
     progressAction: z.enum(["initialize", "get", "rescope-or-replace", "none"]).optional(),
     preparing: z.boolean().optional(),
     currentNativeGoal: z.string().trim().min(1).max(GOAL_NATIVE_OBJECTIVE_MAX_LENGTH).optional(),
+    task: GoalTaskSchema.optional(),
+    checklist: z.array(GoalChecklistRecoveryItemSchema).max(20).optional(),
+    nextCursor: z.string().max(64).nullable().optional(),
   })
   .strict();
 
@@ -96,6 +105,7 @@ export const GoalProgressInitializeInputSchema = z
   .object({
     contractId: businessTransportField(GoalProgressInitializeBusinessSchema.shape.contractId),
     source: businessTransportField(GoalProgressSourceSchema),
+    task: businessTransportField(GoalTaskInitializationSchema),
     objectives: businessTransportField(z.array(GoalObjectiveSchema).max(100)),
     _runtimeContext: RuntimeContextTransportSchema,
     _runtimeProof: RuntimeProofTransportSchema,
@@ -105,6 +115,7 @@ export const GoalProgressInitializeInputSchema = z
 
 export const GoalProgressActivateInputSchema = z
   .object({
+    mode: z.enum(["goal", "task"]).optional(),
     _runtimeContext: RuntimeContextTransportSchema,
     _runtimeProof: RuntimeProofTransportSchema,
   })
@@ -112,6 +123,12 @@ export const GoalProgressActivateInputSchema = z
 
 export const GoalProgressGetInputSchema = z
   .object({
+    cursor: businessTransportField(
+      z
+        .string()
+        .regex(/^\d+:\d+$/u)
+        .max(64),
+    ),
     _runtimeContext: RuntimeContextTransportSchema,
     _runtimeProof: RuntimeProofTransportSchema,
   })
@@ -142,13 +159,14 @@ export const GoalProgressRescopeInputSchema = z
   .passthrough()
   .meta({ required: ["contractId", "expectedRevision", "reason", "objectives"] });
 
-const GoalProgressModelPhaseSchema = GoalProgressPhaseSchema.exclude(["paused", "error"]);
+const GoalProgressModelPhaseSchema = GoalProgressPhaseSchema.exclude(["error"]);
 
 export const GoalProgressSetPhaseInputSchema = z
   .object({
     contractId: businessTransportField(GoalContractIdSchema),
     expectedRevision: businessTransportField(z.number().int().nonnegative()),
     phase: businessTransportField(GoalProgressModelPhaseSchema),
+    verification: businessTransportField(GoalEvidenceSchema),
     _runtimeContext: RuntimeContextTransportSchema,
     _runtimeProof: RuntimeProofTransportSchema,
   })
@@ -165,7 +183,9 @@ const GoalProgressUpdateBusinessSchema = z
   })
   .strict();
 
-const GoalProgressActivateBusinessSchema = z.object({}).strict();
+const GoalProgressActivateBusinessSchema = z
+  .object({ mode: z.enum(["goal", "task"]).optional() })
+  .strict();
 
 const GoalProgressRescopeBusinessSchema = z
   .object({
@@ -181,10 +201,39 @@ const GoalProgressSetPhaseBusinessSchema = z
     contractId: GoalContractIdSchema,
     expectedRevision: z.number().int().nonnegative(),
     phase: GoalProgressModelPhaseSchema,
+    verification: GoalEvidenceSchema.optional(),
   })
   .strict();
 
-const EmptyBusinessSchema = z.object({}).strict();
+const GoalProgressExploreBusinessSchema = GoalExplorationUpdateSchema.extend({
+  contractId: GoalContractIdSchema,
+  expectedRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const GoalProgressExploreInputSchema = z
+  .object({
+    contractId: businessTransportField(GoalContractIdSchema),
+    expectedRevision: businessTransportField(z.number().int().nonnegative()),
+    currentStep: businessTransportField(GoalExplorationUpdateSchema.shape.currentStep),
+    findings: businessTransportField(GoalExplorationUpdateSchema.shape.findings),
+    openQuestions: businessTransportField(GoalExplorationUpdateSchema.shape.openQuestions),
+    _runtimeContext: RuntimeContextTransportSchema,
+    _runtimeProof: RuntimeProofTransportSchema,
+  })
+  .passthrough()
+  .meta({
+    required: ["contractId", "expectedRevision", "currentStep", "findings", "openQuestions"],
+  });
+
+const GoalProgressGetBusinessSchema = z
+  .object({
+    cursor: z
+      .string()
+      .regex(/^\d+:\d+$/u)
+      .max(64)
+      .optional(),
+  })
+  .strict();
 
 function businessInput(input: Record<string, unknown>): Record<string, unknown> {
   const {
@@ -208,6 +257,8 @@ const IpcLoadResultSchema = z
     viewModel: GoalProgressViewModelSchema.nullable(),
     nextTargetId: GoalProgressTargetIdSchema.nullable(),
     eventCount: z.number().int().nonnegative(),
+    checklist: z.array(GoalChecklistRecoveryItemSchema).max(20).optional(),
+    nextCursor: z.string().max(64).nullable().optional(),
     previousContractId: GoalContractIdSchema.optional(),
     previousRevision: z.number().int().nonnegative().optional(),
     currentNativeGoal: z.string().trim().min(1).max(GOAL_NATIVE_OBJECTIVE_MAX_LENGTH).optional(),
@@ -272,6 +323,8 @@ function compactSummary(viewModel: GoalProgressViewModel): string {
 
 function successSummary(viewModel: GoalProgressViewModel): string {
   const details = compactSummary(viewModel);
+  if (viewModel.task && viewModel.overallPercent === null && viewModel.trackingPhase === "active")
+    return truncateText(`Exploring; scope not yet defined. ${viewModel.task.currentStep}`, 500);
   if (viewModel.trackingPhase === "preparing") {
     return truncateText(`Preparing Contract. ${details}`, 500);
   }
@@ -282,6 +335,15 @@ function successSummary(viewModel: GoalProgressViewModel): string {
 }
 
 function nextStep(viewModel: GoalProgressViewModel, nextTargetId: string | null): string {
+  if (viewModel.task && viewModel.trackingPhase === "active") {
+    if (viewModel.overallPercent === null)
+      return "Within the authorized scope, batch material findings with goal_progress_explore; use rescope once acceptance outcomes are known. Tracking does not authorize another turn.";
+    if (viewModel.finalVerificationPending)
+      return "Run final acceptance, then set completed with verified evidence. Do not create or complete a native Goal.";
+    return nextTargetId
+      ? `Next result: ${nextTargetId}. Work only within the current authorization; batch material updates.`
+      : "No remaining progress action.";
+  }
   if (viewModel.trackingPhase === "preparing") {
     return "Finish checklist preparation.";
   }
@@ -613,6 +675,10 @@ function successContent(
   viewModel: GoalProgressViewModel,
   nextTargetId: string | null,
   duplicate: boolean | null,
+  recovery?: {
+    checklist?: z.infer<typeof GoalChecklistRecoveryItemSchema>[] | undefined;
+    nextCursor?: string | null | undefined;
+  },
 ) {
   return toolContent({
     ok: true,
@@ -624,13 +690,22 @@ function successContent(
     summary: successSummary(viewModel),
     nextStep: nextStep(viewModel, nextTargetId),
     duplicate,
+    ...(recovery && viewModel.task
+      ? {
+          task: viewModel.task,
+          checklist: recovery.checklist ?? [],
+          nextCursor: recovery.nextCursor ?? null,
+        }
+      : {}),
   });
 }
 
 function activationNextStep(result: z.infer<typeof IpcActivationResultSchema>): string {
   if (result.code === "NATIVE_GOAL_REQUIRED") {
-    return "Create a native Goal with Codex, then call goal_progress_activate again.";
+    return "No native Goal. For explicitly requested ordinary-task tracking, activate with mode=task. Never create a Goal just for tracking.";
   }
+  if (result.code === "TASK_INITIALIZE")
+    return "Initialize with task.objective and source. Use objectives=[] while scope is unknown; otherwise provide acceptance outcomes. Omit contractId.";
   if (result.progressAction === "rescope-or-replace") {
     return "Compare the existing Checklist with the current native Goal. Rescope only affected objectives, or initialize a new Contract for a major change.";
   }
@@ -671,7 +746,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
     {
       title: "Plan Goal Progress Activation",
       description:
-        "Internal first step after explicit Goal Progress Skill invocation. Plan activation only. Do not create or change a native Goal or Contract.",
+        "Plan explicitly requested tracking. Use mode=task for an ordinary task; default goal preserves native Goal tracking. Never create a Goal just for tracking.",
       inputSchema: GoalProgressActivateInputSchema,
       outputSchema: GoalProgressToolOutputSchema,
       annotations: {
@@ -699,6 +774,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
           method: "activation.plan",
           params: {
             auth: identity.auth,
+            ...(business.data.mode ? { mode: business.data.mode } : {}),
           },
         });
         const result = IpcActivationResultSchema.parse(response.result);
@@ -710,13 +786,17 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
           currentRevision: null,
           ...progressOutput(),
           summary:
-            result.code === "NATIVE_GOAL_REQUIRED"
-              ? "A native Goal is required before Goal Progress can start."
-              : result.code === "NATIVE_GOAL_UPDATED"
-                ? "The native Goal changed. Goal Progress is waiting for Checklist adjustment."
-                : result.progressAction === "get"
-                  ? "The current native Goal already has an active Goal Progress Contract."
-                  : "The current native Goal is ready for Goal Progress initialization.",
+            result.code === "TASK_INITIALIZE"
+              ? "Ordinary task tracking is ready for initialization; no native Goal will be created."
+              : result.code === "TASK_GET"
+                ? "The current task already has a tracking record."
+                : result.code === "NATIVE_GOAL_REQUIRED"
+                  ? "A native Goal is required before Goal Progress can start."
+                  : result.code === "NATIVE_GOAL_UPDATED"
+                    ? "The native Goal changed. Goal Progress is waiting for Checklist adjustment."
+                    : result.progressAction === "get"
+                      ? "The current native Goal already has an active Goal Progress Contract."
+                      : "The current native Goal is ready for Goal Progress initialization.",
           nextStep: activationNextStep(result),
           duplicate: null,
           progressAction: result.progressAction,
@@ -757,7 +837,10 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
           inputRejection(business.error),
         );
       }
-      if (!contributionTotalIsValid(business.data.objectives)) {
+      if (
+        !(business.data.task && business.data.objectives.length === 0) &&
+        !contributionTotalIsValid(business.data.objectives)
+      ) {
         return consumeProofForRejectedInput(
           getIpcClient(),
           identity,
@@ -798,7 +881,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
     {
       title: "Get Goal Progress",
       description:
-        "Read current progress before a write or after a conflict. Do not use it to estimate progress.",
+        "Restore saved progress after resuming or a conflict. Task checklist is a compact read-only page; use nextCursor only for needed subsequent items. Evidence summaries are not write payloads.",
       inputSchema: GoalProgressGetInputSchema,
       outputSchema: GoalProgressToolOutputSchema,
       annotations: {
@@ -812,7 +895,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
       if (!identity.ok) {
         return runtimeContextError(identity.code);
       }
-      const business = EmptyBusinessSchema.safeParse(businessInput(input));
+      const business = GoalProgressGetBusinessSchema.safeParse(businessInput(input));
       if (!business.success) {
         return consumeProofForRejectedInput(
           getIpcClient(),
@@ -825,6 +908,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
           method: "store.load",
           params: {
             sessionId: identity.sessionId,
+            ...(business.data.cursor ? { cursor: business.data.cursor } : {}),
             auth: identity.auth,
           },
         });
@@ -862,7 +946,10 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
             duplicate: null,
           });
         }
-        return successContent(result.viewModel, result.nextTargetId, null);
+        return successContent(result.viewModel, result.nextTargetId, null, {
+          checklist: result.checklist,
+          nextCursor: result.nextCursor,
+        });
       } catch (error) {
         return requestError(error);
       }
@@ -918,6 +1005,69 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
               ...(business.data.correctionReason === undefined
                 ? {}
                 : { correctionReason: business.data.correctionReason }),
+            },
+            auth: identity.auth,
+          },
+        } satisfies GoalProgressIpcRequestInput;
+        const client = getIpcClient();
+        const oversized = await rejectOversizedRequest(client, request, identity);
+        if (oversized) {
+          return oversized;
+        }
+        const response = await client.request(request);
+        const result = IpcWriteResultSchema.parse(response.result);
+        return successContent(result.viewModel, result.nextTargetId, result.duplicate);
+      } catch (error) {
+        return requestError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    GOAL_PROGRESS_EXPLORE_TOOL_NAME,
+    {
+      title: "Record Task Exploration",
+      description:
+        "Batch material findings for an explicitly tracked task whose scope is unknown. Send the complete currentStep, findings and openQuestions; omit unchanged calls.",
+      inputSchema: GoalProgressExploreInputSchema,
+      outputSchema: GoalProgressToolOutputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (input, extra) => {
+      const identity = await resolveToolIdentity(GOAL_PROGRESS_EXPLORE_TOOL_NAME, input, extra);
+      if (!identity.ok) {
+        return runtimeContextError(identity.code);
+      }
+      const business = GoalProgressExploreBusinessSchema.safeParse(businessInput(input));
+      if (!business.success) {
+        return consumeProofForRejectedInput(
+          getIpcClient(),
+          identity,
+          inputRejection(business.error),
+        );
+      }
+      try {
+        const ids = toolRequestIds(identity.callId);
+        const request = {
+          method: "store.apply",
+          params: {
+            command: {
+              type: "update-exploration",
+              contractId: business.data.contractId,
+              sessionId: identity.sessionId,
+              expectedRevision: business.data.expectedRevision,
+              ...ids,
+              turnId: identity.turnId,
+              occurredAt: new Date(identity.occurredAtMs).toISOString(),
+              source: "model",
+              currentStep: business.data.currentStep,
+              findings: business.data.findings,
+              openQuestions: business.data.openQuestions,
             },
             auth: identity.auth,
           },
@@ -1010,7 +1160,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
     {
       title: "Set Goal Progress Phase",
       description:
-        "Set preparing, active, or completed. Do not report task failures as plugin errors; native pause is read-only. Use native Goal for blockers.",
+        "Set tracking phase. Ordinary task completion requires final verified evidence and completed required outcomes. Native Goal completion rules remain unchanged.",
       inputSchema: GoalProgressSetPhaseInputSchema,
       outputSchema: GoalProgressToolOutputSchema,
       annotations: {
@@ -1048,6 +1198,7 @@ export function createGoalProgressMcpServer(options: GoalProgressMcpServerOption
               occurredAt: new Date(identity.occurredAtMs).toISOString(),
               source: "model",
               phase: business.data.phase,
+              ...(business.data.verification ? { verification: business.data.verification } : {}),
             },
             auth: identity.auth,
           },

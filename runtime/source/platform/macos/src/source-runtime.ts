@@ -35,6 +35,7 @@ import {
 } from "./launch-agent-controller.js";
 import { stableErrorCode } from "./macos-errors.js";
 import { createPluginController, resolveVerifiedCodexCli } from "./plugin-controller.js";
+import { ensureSourceCdp } from "./source-cdp-policy.js";
 
 const SOURCE_RUNTIME_ENSURE_COMMAND = "__source-runtime-ensure";
 const LEGACY_PLUGIN_MARKETPLACE = "codex-goal-progress-local";
@@ -357,7 +358,9 @@ export interface SourceRuntimeEnsureResult {
   readonly legacyPluginCleanupCode: string | null;
 }
 
-export async function ensureSourceRuntime(): Promise<SourceRuntimeEnsureResult> {
+export async function ensureSourceRuntime(
+  options: { readonly restartCodex?: boolean } = {},
+): Promise<SourceRuntimeEnsureResult> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error("GOAL_PROGRESS_SOURCE_RUNTIME_MACOS_ARM64_REQUIRED");
   }
@@ -483,11 +486,11 @@ export async function ensureSourceRuntime(): Promise<SourceRuntimeEnsureResult> 
   try {
     launchAgentChanged = await writeIfChanged(launchAgentPath, plist);
     await chmod(launchAgentPath, 0o600);
-    // The renderer target source needs CDP before the Helper can become ready.
+    // Only an explicit UI repair waits for CDP. Core IPC is usable without a renderer.
     const cdp = createCdpController(homedir(), goalProgressRoot);
-    cdpChanged = await cdp.ensure(true);
+    cdpChanged = await ensureSourceCdp(cdp, options.restartCodex === true);
     const cdpDeadline = Date.now() + 60_000;
-    while (!(await cdp.verify())) {
+    while (options.restartCodex === true && !(await cdp.verify())) {
       if (Date.now() >= cdpDeadline) {
         throw new Error("GOAL_PROGRESS_SOURCE_CDP_START_TIMEOUT");
       }
@@ -667,18 +670,20 @@ export async function inspectSourceRuntime(
   const runtimeManifest = runtimeInspection.manifest;
 
   const launchAgent = createLaunchAgentController();
-  const [helperJobLoaded, helper, cdpReady] = await Promise.all([
+  const [helperJobLoaded, helper, cdpHealth] = await Promise.all([
     launchAgent.isLoaded(GOAL_PROGRESS_LAUNCH_AGENT_LABEL),
     inspectInstalledHelper(paths),
-    createCdpController(homedir(), configuration.pluginDataRoot).verify(),
+    createCdpController(homedir(), configuration.pluginDataRoot)
+      .verify()
+      .then(
+        (ready) => ({ ready, code: ready ? null : "CDP_NOT_READY" }),
+        (error: unknown) => ({ ready: false, code: stableErrorCode(error) }),
+      ),
   ]);
-  const ok =
-    runtimeFilesReady &&
-    helperJobLoaded &&
-    helper.ok &&
-    helper.startupListenerRunning &&
-    helper.startupListenerReady &&
-    cdpReady;
+  const toolsReady = runtimeFilesReady && helperJobLoaded && helper.ok;
+  const cdpReady = cdpHealth.ready;
+  const uiConnectionReady = cdpReady;
+  const ok = toolsReady && helper.startupListenerRunning && helper.startupListenerReady && cdpReady;
   const code = ok
     ? command === "doctor"
       ? "DOCTOR_OK"
@@ -693,14 +698,20 @@ export async function inspectSourceRuntime(
             ? "STARTUP_LISTENER_NOT_RUNNING"
             : !helper.startupListenerReady
               ? "STARTUP_LISTENER_NOT_READY"
-              : "CDP_NOT_READY";
+              : (cdpHealth.code ?? "CDP_NOT_READY");
   return {
     schemaVersion: 1,
     command,
     ok,
     code,
     changed: false,
-    nextStep: ok ? null : "Run the source Plugin again to repair its local runtime.",
+    nextStep: ok
+      ? null
+      : !toolsReady
+        ? "Run the source Plugin again to repair its local runtime."
+        : !cdpReady
+          ? "Inspect startup-recovery status; with restart approval run repair --restart-codex to restore the UI connection."
+          : "Inspect the Helper startup listener diagnostics and repair its local runtime.",
     details: {
       releaseVersion: GOAL_PROGRESS_RELEASE_VERSION,
       sourceRuntimeRoot: configuration.sourceRuntimeRoot,
@@ -709,7 +720,10 @@ export async function inspectSourceRuntime(
       runtimeManifest,
       helperJobLoaded,
       helper,
+      toolsReady,
+      uiConnectionReady,
       cdpReady,
+      cdpCode: cdpHealth.code,
       marketplace: configuration.marketplace,
       pluginRoot: configuration.pluginRoot,
     },
@@ -802,6 +816,7 @@ export async function executeSourceRuntimeCommand(
     MacosCommandName,
     "install" | "doctor" | "verify" | "upgrade" | "repair" | "uninstall"
   >,
+  options: { readonly restartCodex?: boolean } = {},
 ): Promise<MacosCommandResult> {
   if (command === "doctor" || command === "verify") {
     return inspectSourceRuntime(command);
@@ -819,7 +834,7 @@ export async function executeSourceRuntimeCommand(
       },
     });
   }
-  const ensured = await ensureSourceRuntime();
+  const ensured = await ensureSourceRuntime(options);
   const verified = await inspectSourceRuntime("verify");
   if (!verified.ok) {
     return sourceCommandResult(command, {

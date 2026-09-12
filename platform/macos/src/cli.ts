@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 import { runHookCli } from "../../../hooks/src/index.js";
 import { runHelperCli } from "../../../packages/host/src/index.js";
 import { runMcpServer } from "../../../packages/mcp/src/index.js";
+import { resolveGoalProgressPaths } from "../../../packages/store/src/paths.js";
+import { requireSingleCodexMacosApp } from "./app-discovery.js";
 import {
   executeMacosCommand,
   MACOS_COMMAND_NAMES,
@@ -25,6 +27,7 @@ import {
   inspectSourceRuntime,
   uninstallSourceRuntime,
 } from "./source-runtime.js";
+import { readStartupRecoveryConsent, writeStartupRecoveryConsent } from "./startup-consent.js";
 import {
   GOAL_PROGRESS_UPDATE_INSTALL_HANDOFF_COMMAND,
   runUpdateInstallHandoffFromEnvironment,
@@ -44,6 +47,23 @@ export async function runGoalProgressCli(
   options: RunGoalProgressCliOptions = {},
 ): Promise<void> {
   const command = argv[0];
+  if (command === "startup-recovery") {
+    const action = argv[1];
+    if (!["enable", "disable", "status"].includes(action ?? "") || argv.length !== 2) {
+      throw new Error("Usage: startup-recovery enable|disable|status");
+    }
+    const paths = resolveGoalProgressPaths({
+      ...(process.env.GOAL_PROGRESS_ROOT ? { root: process.env.GOAL_PROGRESS_ROOT } : {}),
+      ...(options.homeDirectory ? { homeDirectory: options.homeDirectory } : {}),
+    });
+    if (action === "enable")
+      await writeStartupRecoveryConsent(paths, await requireSingleCodexMacosApp());
+    if (action === "disable") await writeStartupRecoveryConsent(paths, null);
+    const consent = await readStartupRecoveryConsent(paths);
+    process.stdout.write(`${JSON.stringify({ ok: true, enabled: consent !== null, consent })}\n`);
+    return;
+  }
+
   if (command === GOAL_PROGRESS_UPDATE_INSTALL_HANDOFF_COMMAND) {
     await runUpdateInstallHandoffFromEnvironment();
     return;
@@ -70,7 +90,7 @@ export async function runGoalProgressCli(
     return;
   }
   if (command === "__source-runtime-ensure") {
-    const result = await ensureSourceRuntime();
+    const result = await ensureSourceRuntime({ restartCodex: argv.includes("--restart-codex") });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
@@ -132,6 +152,7 @@ export async function runGoalProgressCli(
             | "upgrade"
             | "repair"
             | "uninstall",
+          { restartCodex: parsed.input.restartCodex },
         )
       : parsed.result;
     process.stdout.write(

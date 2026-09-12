@@ -20,6 +20,10 @@ import {
   waitForCodexCdpListenerOwnership,
   writeCodexCdpRuntimeState,
 } from "../../../platform/macos/src/index.js";
+import {
+  type StartupRecoveryConsent,
+  startupRecoveryConsentMatches,
+} from "../../../platform/macos/src/startup-consent.js";
 import { GoalContractSchema, GoalContractV1Schema } from "../../contracts/src/index.js";
 import type { GoalProgressPaths } from "../../store/src/index.js";
 
@@ -115,6 +119,7 @@ export interface MacosStartupHandoffControllerOptions {
 export interface MacosStartupHandoffContext {
   readonly isPending: () => boolean;
   readonly isStopped?: () => boolean;
+  readonly recoveryConsent?: StartupRecoveryConsent;
 }
 
 function eventResponse(
@@ -478,7 +483,7 @@ export class MacosStartupHandoffController {
     const isStopped = () => context.isStopped?.() === true;
     const canFinish = () => !isSuperseded() && !isStopped();
     const canStart = () => canFinish() && context.isPending() && this.#now() < event.deadlineAtMs;
-    if (!recoverableProgress) {
+    if (!recoverableProgress && !context.recoveryConsent) {
       return this.#remember(
         key,
         eventResponse(event, "continue", "STARTUP_EVENT_NO_RECOVERABLE_PROGRESS"),
@@ -529,6 +534,13 @@ export class MacosStartupHandoffController {
       event.executablePath !== app.realExecutablePath
     ) {
       return this.#remember(key, eventResponse(event, "continue", "STARTUP_EVENT_APP_MISMATCH"));
+    }
+
+    if (context.recoveryConsent && !startupRecoveryConsentMatches(context.recoveryConsent, app)) {
+      return this.#remember(
+        key,
+        eventResponse(event, "continue", "STARTUP_RECOVERY_CONSENT_MISMATCH"),
+      );
     }
 
     const existingInstance = await this.#existingInstanceResponse(event, app);

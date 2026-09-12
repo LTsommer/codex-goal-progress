@@ -146,6 +146,12 @@ for (const relativePath of [
 const manifest = {
   schemaVersion: 1,
   releaseVersion,
+  socketPolicySha256: createHash("sha256")
+    .update(await readFile(resolve(sourceRoot, "packages/store/src/socket-path.cjs")))
+    .digest("hex"),
+  setupPolicySha256: createHash("sha256")
+    .update(await readFile(resolve(sourceRoot, "platform/macos/src/source-cdp-policy.ts")))
+    .digest("hex"),
   nodeVersion: process.version,
   builtAt: new Date().toISOString(),
   files,
