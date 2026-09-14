@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, realpath, unlink } from "node:fs/promises";
+import { readdir, readFile, readlink, realpath, unlink } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -123,9 +123,44 @@ async function inspectDarwinProcess(pid: number): Promise<{
   };
 }
 
+async function inspectLinuxProcess(pid: number): Promise<{
+  readonly processStartedAtMs: number;
+  readonly executablePath: string;
+}> {
+  const [stat, systemStat, clock, executablePath] = await Promise.all([
+    readFile(`/proc/${pid}/stat`, "utf8"),
+    readFile("/proc/stat", "utf8"),
+    execFileAsync("getconf", ["CLK_TCK"], { encoding: "utf8" }),
+    readlink(`/proc/${pid}/exe`),
+  ]);
+  // comm can contain spaces and parentheses; fields after its final ')' start at field 3.
+  const ticks = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
+  const boot = Number(/^btime (\d+)$/mu.exec(systemStat)?.[1]);
+  const hz = Number(clock.stdout.trim());
+  if (!Number.isFinite(ticks) || !Number.isFinite(boot) || !Number.isFinite(hz) || hz <= 0) {
+    throw new GoalProgressStoreError("HELPER_LOCK_INVALID", "Linux process identity is invalid");
+  }
+  return { processStartedAtMs: boot * 1000 + (ticks * 1000) / hz, executablePath };
+}
+
 async function defaultIsProcessIdentityCurrent(identity: HelperIdentity): Promise<boolean> {
   if (!(await pidExists(identity.pid))) {
     return false;
+  }
+  if (process.platform === "linux") {
+    try {
+      const observed = await inspectLinuxProcess(identity.pid);
+      return (
+        Math.abs(observed.processStartedAtMs - identity.processStartedAtMs) <=
+          PROCESS_START_TOLERANCE_MS &&
+        (await helperExecutablePathsMatch(observed.executablePath, identity.executablePath))
+      );
+    } catch (error) {
+      if (hasCode(error, "ENOENT") && !(await pidExists(identity.pid))) return false;
+      throw new GoalProgressStoreError("HELPER_LOCK_INVALID", "Cannot verify Linux lock owner", {
+        cause: error,
+      });
+    }
   }
   if (process.platform !== "darwin") {
     return true;

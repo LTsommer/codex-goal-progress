@@ -417,6 +417,7 @@ if (manifest) {
       "runtime/bootstrap.mjs",
       "runtime/runtime-lock.mjs",
       "runtime/build-runtime.mjs",
+      "runtime/setup-policy.mjs",
       "runtime/helper-launcher.sh",
       "runtime/node-runtime.sh",
       "runtime/pnpm-lock.yaml",

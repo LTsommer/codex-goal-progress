@@ -70,6 +70,13 @@ progress, overall progress, and Token usage attributable to that Goal.
 
 ## 🚀 Quick start
 
+### Linux desktop source installation
+
+This checkout includes Linux x86_64 support for the packaged ChatGPT/Codex desktop app,
+using a systemd user service and a managed desktop entry. Run `sh ./install-local.sh --check`
+first. See [Linux installation and acceptance](docs/LINUX.md) for the supported package layout,
+restart permission, and real-desktop verification requirements.
+
 ### Claude Code (CLI / IDE)
 
 Claude Code support is available in this local development version. It provides

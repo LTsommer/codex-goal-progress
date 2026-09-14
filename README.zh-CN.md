@@ -66,6 +66,12 @@
 
 ## 🚀 快速开始
 
+### Linux 桌面源码安装
+
+本分支提供 Linux x86_64 打包版 ChatGPT/Codex 桌面适配，使用 systemd 用户服务和受管理的桌面入口。
+先运行 `sh ./install-local.sh --check`。支持的应用布局、重启授权和真实桌面验收要求见
+[Linux 安装与验收](docs/LINUX.md)。
+
 ### Claude Code（命令行／IDE）
 
 本地开发版已加入 Claude Code 适配：通过 `/goal-progress:track` 启动普通任务跟踪，

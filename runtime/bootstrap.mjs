@@ -20,12 +20,20 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireRuntimeLock } from "./runtime-lock.mjs";
+import { setupPolicySha256 } from "./setup-policy.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 const pluginRoot = resolve(runtimeRoot, "..");
 const mode = process.argv[2] ?? "prepare";
 
 function sourceCodeRoot() {
+  // A checkout owns its source; installed plugins use the packaged mirror.
+  if (
+    ["packages", "platform", "hooks/src"].every((directory) =>
+      existsSync(resolve(pluginRoot, directory)),
+    )
+  )
+    return pluginRoot;
   const packaged = resolve(runtimeRoot, "source");
   if (existsSync(resolve(packaged, "packages"))) return packaged;
   const checkout = [pluginRoot, resolve(pluginRoot, "../..")].find((candidate) =>
@@ -205,8 +213,7 @@ function runtimeIsReady(root = versionRoot) {
     manifest.schemaVersion !== 1 ||
     manifest.releaseVersion !== version ||
     manifest.socketPolicySha256 !== sha256(socketPolicyPath) ||
-    manifest.setupPolicySha256 !==
-      sha256(resolve(sourceCodeRoot(), "platform/macos/src/source-cdp-policy.ts")) ||
+    manifest.setupPolicySha256 !== setupPolicySha256(sourceCodeRoot()) ||
     !manifest.files ||
     typeof manifest.files !== "object"
   ) {
@@ -339,6 +346,7 @@ function copyBuildInputs(stagingRoot) {
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "build-runtime.mjs",
+    "setup-policy.mjs",
     "node-runtime.sh",
     "helper-launcher.sh",
     "startup-listener-launcher.sh",
@@ -493,6 +501,7 @@ function sourceHelperReachable(timeoutMs = 150) {
 }
 
 function fallbackLegacy(targetMode) {
+  if (process.platform === "linux") return false;
   if (!executable(legacyBinary)) {
     return false;
   }
@@ -559,6 +568,12 @@ async function main() {
         process.exitCode = 1;
       }
     }
+    return;
+  }
+
+  if (mode === "install-files" && process.platform === "linux") {
+    const root = await buildRuntime(process.argv.includes("--rebuild"));
+    runAttached(resolve(root, "bin/goal-progress"), ["__linux-prepare"], runtimeEnvironment(root));
     return;
   }
 

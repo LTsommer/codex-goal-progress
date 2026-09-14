@@ -259,7 +259,7 @@ function parseMountInput(value: unknown): GoalProgressPageMountInput | null {
       ? null
       : parseGoalProgressUpdateState(value.updateState);
   if (
-    (platform !== "macos" && platform !== "windows") ||
+    (platform !== "macos" && platform !== "windows" && platform !== "linux") ||
     typeof appVersion !== "string" ||
     !/^[0-9]+(?:\.[0-9]+){1,5}$/u.test(appVersion) ||
     !isViewModelEnvelope(value.viewModel) ||

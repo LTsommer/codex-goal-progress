@@ -2573,7 +2573,13 @@ export class GoalProgressHelper {
   }
 }
 
-export async function runHelperCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+export async function runHelperCli(
+  argv: readonly string[] = process.argv.slice(2),
+  platformOptions: Pick<
+    GoalProgressHelperOptions,
+    "sourcePluginRuntime" | "openUpdateRelease"
+  > = {},
+): Promise<void> {
   const root = process.env.GOAL_PROGRESS_ROOT;
   const paths = resolveGoalProgressPaths(root === undefined ? {} : { root: resolve(root) });
   if (argv[0] === "doctor") {
@@ -2587,11 +2593,11 @@ export async function runHelperCli(argv: readonly string[] = process.argv.slice(
     throw new Error("Usage: goal-progress-helper [serve|doctor --json]");
   }
   const viewClient =
-    process.platform === "darwin"
+    process.platform === "darwin" || process.platform === "linux"
       ? new GoalProgressCdpViewClient(paths.helperSocketPath)
       : undefined;
   const viewModelSink =
-    process.platform === "darwin"
+    process.platform === "darwin" || process.platform === "linux"
       ? new RendererTargetManager({
           connector: () => connectHelperRendererTargetSource(paths),
           onTargetReady: (targetId, threadId, lifecycleId) => {
@@ -2624,6 +2630,7 @@ export async function runHelperCli(argv: readonly string[] = process.argv.slice(
         }
       : undefined;
   const helper = new GoalProgressHelper({
+    ...platformOptions,
     paths,
     ...(viewModelSink === undefined ? {} : { viewModelSink }),
     ...(viewModelSink === undefined
