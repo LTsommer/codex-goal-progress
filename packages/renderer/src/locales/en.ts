@@ -30,6 +30,7 @@ export const enMessages: GoalProgressMessages = {
   displaySettings: "Display",
   versionSection: "Version",
   effects: "Effects",
+  accentColor: "Accent color",
   animationEffects: "Animation effects",
   fixedDisplay: "Fixed display",
   floatingDisplay: "Floating display",

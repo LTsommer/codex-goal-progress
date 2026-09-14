@@ -1,5 +1,6 @@
 import { html } from "lit";
 import type {
+  GoalProgressAccent,
   GoalProgressPlacement,
   GoalProgressUpdateState,
   GoalProgressViewModel,
@@ -13,6 +14,7 @@ import { renderTaskDetails, taskLabels } from "./task.js";
 
 export interface TrackingRenderOptions extends ObjectiveListRenderOptions {
   readonly collapsed: boolean;
+  readonly accent: GoalProgressAccent;
   readonly locale: string;
   readonly motionPaused: boolean;
   readonly placement: GoalProgressPlacement;
@@ -26,6 +28,7 @@ export interface TrackingRenderOptions extends ObjectiveListRenderOptions {
   readonly onFloatingPointerMove: (event: PointerEvent) => void;
   readonly onFloatingPointerUp: (event: PointerEvent) => void;
   readonly onSelectPlacement: (placement: GoalProgressPlacement) => void;
+  readonly onSelectAccent: (accent: GoalProgressAccent) => void;
   readonly onCheckUpdate: () => void;
   readonly onOpenCurrentRelease: () => void;
   readonly onOpenLatestRelease: () => void;

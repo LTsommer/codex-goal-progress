@@ -246,6 +246,10 @@ export const objectiveStyles = css`
       transition: width 420ms ease;
     }
 
+    :host([accent="rainbow"]) .mini-fill {
+      background: var(--gp-palette-rainbow);
+    }
+
     .mini-fill::after {
       position: absolute;
       inset: -2px auto -2px -38%;

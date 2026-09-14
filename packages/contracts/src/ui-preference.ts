@@ -1,14 +1,29 @@
 import { z } from "zod";
 
-export const GOAL_PROGRESS_UI_PREFERENCE_SCHEMA_VERSION = 2 as const;
+export const GOAL_PROGRESS_UI_PREFERENCE_SCHEMA_VERSION = 3 as const;
 export const GOAL_PROGRESS_TRACKING_OVERLAY_SCHEMA_VERSION = 1 as const;
 export const DEFAULT_GOAL_PROGRESS_FLOATING_X_RATIO = 0.5;
+
+export const GOAL_PROGRESS_ACCENTS = [
+  "host",
+  "blue",
+  "green",
+  "yellow",
+  "pink",
+  "orange",
+  "purple",
+  "monochrome",
+  "rainbow",
+] as const;
+
+export type GoalProgressAccent = (typeof GOAL_PROGRESS_ACCENTS)[number];
 
 export const GOAL_PROGRESS_ALLOWED_UI_INTENTS = [
   "setCollapsed",
   "setMotionPaused",
   "setPlacement",
   "setFloatingXRatio",
+  "setAccent",
   "requestRetry",
   "requestDetach",
 ] as const;
@@ -24,12 +39,24 @@ export const GoalProgressUiPreferenceSchema = z
     hidden: z.boolean(),
     placement: z.enum(["inline", "floating"]),
     floatingXRatio: z.number().min(0).max(1),
+    accent: z.enum(GOAL_PROGRESS_ACCENTS),
   })
   .strict();
 
 export type GoalProgressUiPreference = z.infer<typeof GoalProgressUiPreferenceSchema>;
 
-const LegacyGoalProgressUiPreferenceSchema = z
+const LegacyGoalProgressUiPreferenceV2Schema = z
+  .object({
+    schemaVersion: z.literal(2),
+    collapsed: z.boolean(),
+    motionPaused: z.boolean(),
+    hidden: z.boolean(),
+    placement: z.enum(["inline", "floating"]),
+    floatingXRatio: z.number().min(0).max(1),
+  })
+  .strict();
+
+const LegacyGoalProgressUiPreferenceV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     collapsed: z.boolean(),
@@ -45,6 +72,7 @@ export const DEFAULT_GOAL_PROGRESS_UI_PREFERENCE: GoalProgressUiPreference = {
   hidden: false,
   placement: "inline",
   floatingXRatio: DEFAULT_GOAL_PROGRESS_FLOATING_X_RATIO,
+  accent: "host",
 };
 
 export function migrateGoalProgressUiPreference(input: unknown): GoalProgressUiPreference | null {
@@ -52,15 +80,24 @@ export function migrateGoalProgressUiPreference(input: unknown): GoalProgressUiP
   if (current.success) {
     return current.data;
   }
-  const legacy = LegacyGoalProgressUiPreferenceSchema.safeParse(input);
-  if (!legacy.success) {
+  const v2 = LegacyGoalProgressUiPreferenceV2Schema.safeParse(input);
+  if (v2.success) {
+    return {
+      ...v2.data,
+      schemaVersion: GOAL_PROGRESS_UI_PREFERENCE_SCHEMA_VERSION,
+      accent: "host",
+    };
+  }
+  const v1 = LegacyGoalProgressUiPreferenceV1Schema.safeParse(input);
+  if (!v1.success) {
     return null;
   }
   return {
-    ...legacy.data,
+    ...v1.data,
     schemaVersion: GOAL_PROGRESS_UI_PREFERENCE_SCHEMA_VERSION,
     placement: "inline",
     floatingXRatio: DEFAULT_GOAL_PROGRESS_FLOATING_X_RATIO,
+    accent: "host",
   };
 }
 
@@ -101,6 +138,12 @@ export const GoalProgressUiIntentSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("setFloatingXRatio"),
       floatingXRatio: z.number().min(0).max(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("setAccent"),
+      accent: z.enum(GOAL_PROGRESS_ACCENTS),
     })
     .strict(),
   z

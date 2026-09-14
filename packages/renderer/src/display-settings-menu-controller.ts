@@ -1,11 +1,13 @@
-import type { GoalProgressPlacement } from "../../contracts/src/index.js";
+import type { GoalProgressAccent, GoalProgressPlacement } from "../../contracts/src/index.js";
 import {
+  GOAL_PROGRESS_SET_ACCENT_EVENT,
   GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT,
   GOAL_PROGRESS_SET_PLACEMENT_EVENT,
 } from "../../contracts/src/renderer-events.js";
 
 export interface DisplaySettingsMenuHost extends EventTarget {
   _settingsOpen: boolean;
+  accent: GoalProgressAccent;
   motionPaused: boolean;
   placement: GoalProgressPlacement;
   requestedPlacement: GoalProgressPlacement;
@@ -65,6 +67,17 @@ export class DisplaySettingsMenuController {
     this.#host.dispatchEvent(
       new CustomEvent(GOAL_PROGRESS_SET_PLACEMENT_EVENT, {
         detail: { placement },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
+
+  readonly selectAccent = (accent: GoalProgressAccent): void => {
+    this.close();
+    this.#host.dispatchEvent(
+      new CustomEvent(GOAL_PROGRESS_SET_ACCENT_EVENT, {
+        detail: { accent },
         bubbles: true,
         composed: true,
       }),

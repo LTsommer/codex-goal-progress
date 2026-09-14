@@ -166,6 +166,11 @@ export async function handleHelperUiIntent(
       ...preference,
       floatingXRatio: accepted.intent.floatingXRatio,
     });
+  } else if (accepted.intent.type === "setAccent") {
+    preference = await writeGoalProgressUiPreference(dependencies.paths, {
+      ...preference,
+      accent: accepted.intent.accent,
+    });
   } else if (accepted.intent.type === "requestDetach") {
     dismissedPreparation = dependencies.preparingObjectives.has(threadId);
     await writeGoalProgressActivationState(threadId, dependencies.paths, {

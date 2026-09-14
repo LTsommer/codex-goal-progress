@@ -287,6 +287,85 @@ export const layoutAndTypographyStyles = css`
       font-weight: 500;
     }
 
+    .accent-swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(9, 20px);
+      gap: 4px;
+      padding: 1px 8px 5px;
+    }
+
+    .placement-menu button.accent-swatch,
+    .placement-menu:has(.update-menu-row) button.accent-swatch {
+      display: grid;
+      width: 20px;
+      height: 20px;
+      min-height: 20px;
+      padding: 2px;
+      place-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      font-weight: inherit;
+    }
+
+    .placement-menu button.accent-swatch[data-accent][aria-checked="true"],
+    .placement-menu:has(.update-menu-row)
+      button.accent-swatch[data-accent][aria-checked="true"] {
+      border-color: var(--gp-swatch-color, var(--gp-host-accent));
+      background: transparent;
+      color: inherit;
+      font-weight: inherit;
+    }
+
+    .accent-swatch-sample {
+      width: 12px;
+      height: 12px;
+      flex: none;
+      border-radius: 50%;
+      background: var(--gp-swatch-color, var(--gp-host-accent));
+    }
+
+    .accent-swatch[data-accent="blue"] {
+      --gp-swatch-color: var(--gp-palette-blue);
+    }
+
+    .accent-swatch[data-accent="green"] {
+      --gp-swatch-color: var(--gp-palette-green);
+    }
+
+    .accent-swatch[data-accent="yellow"] {
+      --gp-swatch-color: var(--gp-palette-yellow);
+    }
+
+    .accent-swatch[data-accent="pink"] {
+      --gp-swatch-color: var(--gp-palette-pink);
+    }
+
+    .accent-swatch[data-accent="orange"] {
+      --gp-swatch-color: var(--gp-palette-orange);
+    }
+
+    .accent-swatch[data-accent="purple"] {
+      --gp-swatch-color: var(--gp-palette-purple);
+    }
+
+    .accent-swatch[data-accent="monochrome"] {
+      --gp-swatch-color: var(--gp-text);
+    }
+
+    .accent-swatch[data-accent="rainbow"] {
+      --gp-swatch-color: var(--gp-palette-rainbow-wheel);
+    }
+
+    .placement-menu button.accent-swatch[data-accent="rainbow"][aria-checked="true"],
+    .placement-menu:has(.update-menu-row)
+      button.accent-swatch[data-accent="rainbow"][aria-checked="true"] {
+      border-color: transparent;
+      background: var(--gp-swatch-color);
+    }
+
     .motion-switch {
       position: relative;
       display: inline-flex;

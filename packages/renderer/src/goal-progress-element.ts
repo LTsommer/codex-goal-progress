@@ -1,5 +1,6 @@
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import type {
+  GoalProgressAccent,
   GoalProgressPlacement,
   GoalProgressUpdateIntent,
   GoalProgressUpdateState,
@@ -49,6 +50,7 @@ export class GoalProgressElement extends LitElement {
     viewModel: { attribute: false },
     updateState: { attribute: false },
     collapsed: { type: Boolean, reflect: true },
+    accent: { type: String, reflect: true },
     motionPaused: { type: Boolean, attribute: "motion-paused", reflect: true },
     placement: { type: String, reflect: true },
     requestedPlacement: { type: String, attribute: "requested-placement", reflect: true },
@@ -89,6 +91,7 @@ export class GoalProgressElement extends LitElement {
   declare viewModel: GoalProgressViewModel | null;
   declare updateState: GoalProgressUpdateState | null;
   declare collapsed: boolean;
+  declare accent: GoalProgressAccent;
   declare motionPaused: boolean;
   declare placement: GoalProgressPlacement;
   declare requestedPlacement: GoalProgressPlacement;
@@ -128,6 +131,7 @@ export class GoalProgressElement extends LitElement {
     this.viewModel = null;
     this.updateState = null;
     this.collapsed = false;
+    this.accent = "host";
     this.motionPaused = false;
     this.placement = "inline";
     this.requestedPlacement = "inline";
@@ -515,6 +519,7 @@ export class GoalProgressElement extends LitElement {
     return html`<section class="panel phase-${viewModel.trackingPhase} placement-${this.placement}">
       ${renderTrackingView(viewModel, {
         collapsed: this.collapsed,
+        accent: this.accent,
         motionPaused: this.motionPaused,
         placement: this.placement,
         requestedPlacement: this.requestedPlacement,
@@ -533,6 +538,7 @@ export class GoalProgressElement extends LitElement {
         onFloatingPointerMove: this.#moveFloatingPointerEvent,
         onFloatingPointerUp: this.#endFloatingPointer,
         onSelectPlacement: this.#displaySettingsMenu.selectPlacement,
+        onSelectAccent: this.#displaySettingsMenu.selectAccent,
         onCheckUpdate: this.#checkUpdate,
         onOpenCurrentRelease: this.#openCurrentRelease,
         onOpenLatestRelease: this.#openLatestRelease,

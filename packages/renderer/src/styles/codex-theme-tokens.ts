@@ -3,10 +3,40 @@ import { css } from "lit";
 export const codexThemeTokenStyles = css`
     :host {
       /* Codex host tokens → Goal Progress semantic tokens. */
-      --gp-accent: var(
+      --gp-host-accent: var(
         --color-token-primary,
         var(--color-text-accent, var(--codex-base-accent, var(--gp-fallback-accent)))
       );
+      --gp-palette-blue: #0b7fe8;
+      --gp-palette-green: #218c58;
+      --gp-palette-yellow: #a36a00;
+      --gp-palette-pink: #ca4c98;
+      --gp-palette-orange: #c65c00;
+      --gp-palette-purple: #8f5ce7;
+      --gp-palette-rainbow: linear-gradient(
+        90deg,
+        #ef476f,
+        #f78c42 18%,
+        #ffd166 34%,
+        #06d6a0 50%,
+        #118ab2 67%,
+        #7b61ff 84%,
+        #ef476f
+      );
+      --gp-palette-rainbow-wheel: conic-gradient(
+        from -90deg,
+        #ff3b30,
+        #ff9500,
+        #ffcc00,
+        #34c759,
+        #00c7be,
+        #007aff,
+        #5856d6,
+        #af52de,
+        #ff2d55,
+        #ff3b30
+      );
+      --gp-accent: var(--gp-host-accent);
       --gp-panel: var(
         --color-token-main-surface-primary,
         var(--codex-base-surface, var(--gp-fallback-panel))
@@ -77,5 +107,33 @@ export const codexThemeTokenStyles = css`
       );
       --gp-control-size: max(24px, calc(var(--gp-font-size) * 1.714286));
       --gp-control-radius: max(10px, calc(var(--gp-font-size) * 0.714286));
+    }
+
+    :host([accent="blue"]) {
+      --gp-accent: var(--gp-palette-blue);
+    }
+
+    :host([accent="green"]) {
+      --gp-accent: var(--gp-palette-green);
+    }
+
+    :host([accent="yellow"]) {
+      --gp-accent: var(--gp-palette-yellow);
+    }
+
+    :host([accent="pink"]) {
+      --gp-accent: var(--gp-palette-pink);
+    }
+
+    :host([accent="orange"]) {
+      --gp-accent: var(--gp-palette-orange);
+    }
+
+    :host([accent="purple"]) {
+      --gp-accent: var(--gp-palette-purple);
+    }
+
+    :host([accent="monochrome"]) {
+      --gp-accent: var(--gp-text);
     }
 `;

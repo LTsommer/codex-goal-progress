@@ -12,6 +12,7 @@ import {
 import { html, nothing } from "lit";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import type {
+  GoalProgressAccent,
   GoalProgressPlacement,
   GoalProgressUpdateState,
 } from "../../../contracts/src/index.js";
@@ -20,6 +21,7 @@ import type { GoalProgressMessages } from "../locale.js";
 import { renderUpdatePrompt } from "./update-prompt.js";
 
 export interface DisplaySettingsMenuRenderOptions {
+  readonly accent: GoalProgressAccent;
   readonly hidePlacementSettings?: boolean;
   readonly motionPaused: boolean;
   readonly onCheckUpdate: () => void;
@@ -29,6 +31,7 @@ export interface DisplaySettingsMenuRenderOptions {
   readonly onRestartNow: () => void;
   readonly onRetryUpdate: () => void;
   readonly onSelectPlacement: (placement: GoalProgressPlacement) => void;
+  readonly onSelectAccent: (accent: GoalProgressAccent) => void;
   readonly onStartUpdate: () => void;
   readonly onToggleMotionPaused: () => void;
   readonly onTogglePlacementSettings: (event: MouseEvent) => void;
@@ -39,6 +42,21 @@ export interface DisplaySettingsMenuRenderOptions {
   readonly updateUnread: boolean;
   readonly messages: GoalProgressMessages;
 }
+
+const accentOptions: ReadonlyArray<{
+  readonly accent: GoalProgressAccent;
+  readonly label: string;
+}> = [
+  { accent: "host", label: "Follow Codex" },
+  { accent: "blue", label: "Blue" },
+  { accent: "green", label: "Green" },
+  { accent: "yellow", label: "Yellow" },
+  { accent: "pink", label: "Pink" },
+  { accent: "orange", label: "Orange" },
+  { accent: "purple", label: "Purple" },
+  { accent: "monochrome", label: "Black or white" },
+  { accent: "rainbow", label: "Rainbow" },
+];
 
 function updateMenuStatus(state: GoalProgressUpdateState, messages: GoalProgressMessages): string {
   if (state.phase === "up-to-date") {
@@ -214,6 +232,28 @@ export function renderDisplaySettingsMenu(options: DisplaySettingsMenuRenderOpti
                   aria-hidden="true"
                 ><span class="motion-switch-knob"></span></span>
               </button>
+              <span class="update-menu-block-divider" aria-hidden="true"></span>
+              <span class="update-menu-section-title">${options.messages.accentColor ?? "Accent color"}</span>
+              <span
+                class="accent-swatch-grid"
+                role="group"
+                aria-label=${options.messages.accentColor ?? "Accent color"}
+              >
+                ${accentOptions.map(
+                  ({ accent, label }) => html`
+                    <button
+                      class="accent-swatch"
+                      data-accent=${accent}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked=${String(options.accent === accent)}
+                      aria-label=${label}
+                      title=${label}
+                      @click=${() => options.onSelectAccent(accent)}
+                    ><span class="accent-swatch-sample" aria-hidden="true"></span></button>
+                  `,
+                )}
+              </span>
               <span class="update-menu-block-divider" aria-hidden="true"></span>
               ${
                 options.hidePlacementSettings
