@@ -2,6 +2,10 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  readLinuxCdpRuntimeState,
+  verifyLinuxCdpRuntime,
+} from "../../../platform/linux/src/cdp-runtime.js";
+import {
   inspectCodexMacosApp,
   readCodexCdpRuntimeState,
   verifyCodexCdpListenerOwnership,
@@ -258,13 +262,16 @@ export async function resolveHelperRendererBundleDirectory(
   throw new Error("GOAL_PROGRESS_RENDERER_BUNDLE_NOT_FOUND");
 }
 
-export async function connectHelperRendererBridge(
-  paths: GoalProgressPaths,
-): Promise<GoalProgressRendererBridge | undefined> {
+async function verifiedRendererRuntime(paths: GoalProgressPaths) {
+  if (process.platform === "linux") {
+    const state = await readLinuxCdpRuntimeState(paths.cdpRuntimePath);
+    const { app } = await verifyLinuxCdpRuntime(state);
+    return { state, app: { ...app, signatureValid: undefined }, platform: "linux" as const };
+  }
   if (process.platform !== "darwin") {
     return undefined;
   }
-  const statePath = resolve(paths.runtimeRoot, "cdp.json");
+  const statePath = paths.cdpRuntimePath;
   let state: Awaited<ReturnType<typeof readCodexCdpRuntimeState>>;
   try {
     state = await readCodexCdpRuntimeState(statePath);
@@ -289,6 +296,15 @@ export async function connectHelperRendererBridge(
   ) {
     throw new Error("GOAL_PROGRESS_CDP_RUNTIME_OWNERSHIP_CHANGED");
   }
+  return { state, app, platform: "macos" as const };
+}
+
+export async function connectHelperRendererBridge(
+  paths: GoalProgressPaths,
+): Promise<GoalProgressRendererBridge | undefined> {
+  const runtime = await verifiedRendererRuntime(paths);
+  if (!runtime) return undefined;
+  const { state, app, platform } = runtime;
   const bundleDirectory = await resolveHelperRendererBundleDirectory();
   const [source, manifestText] = await Promise.all([
     readFile(resolve(bundleDirectory, "goal-progress.js"), "utf8"),
@@ -300,7 +316,7 @@ export async function connectHelperRendererBridge(
   const connected = await connectGoalProgressRendererBridge({
     port: state.port,
     bundle,
-    platform: "macos",
+    platform,
     appVersion: app.shortVersion,
     onUiIntent: (threadId, intent) => viewClient.applyUiIntent(threadId, intent),
     onUpdateIntent: (threadId, intent) => viewClient.applyUpdateIntent(threadId, intent),
@@ -312,7 +328,7 @@ export async function connectHelperRendererBridge(
       targetId ? viewClient.reportDisconnected(targetId, code) : undefined,
     environment: {
       appPath: app.realAppPath,
-      appSignatureValid: app.signatureValid,
+      ...(app.signatureValid === undefined ? {} : { appSignatureValid: app.signatureValid }),
     },
   });
   targetId = connected.targetId;
@@ -322,34 +338,9 @@ export async function connectHelperRendererBridge(
 export async function connectHelperRendererTargetSource(
   paths: GoalProgressPaths,
 ): Promise<RendererTargetSource | undefined> {
-  if (process.platform !== "darwin") {
-    return undefined;
-  }
-  const statePath = resolve(paths.runtimeRoot, "cdp.json");
-  let state: Awaited<ReturnType<typeof readCodexCdpRuntimeState>>;
-  try {
-    state = await readCodexCdpRuntimeState(statePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-  const app = await inspectCodexMacosApp(state.appPath);
-  if (
-    app.realExecutablePath !== state.executablePath ||
-    app.bundleId !== state.bundleId ||
-    app.teamId !== state.teamId
-  ) {
-    throw new Error("GOAL_PROGRESS_CDP_RUNTIME_APP_MISMATCH");
-  }
-  const ownership = await verifyCodexCdpListenerOwnership(app, state.mainPid, state.port);
-  if (
-    ownership.mainProcess.startedAt !== state.processStartedAt ||
-    ownership.mainProcess.command !== state.command
-  ) {
-    throw new Error("GOAL_PROGRESS_CDP_RUNTIME_OWNERSHIP_CHANGED");
-  }
+  const runtime = await verifiedRendererRuntime(paths);
+  if (!runtime) return undefined;
+  const { state, app, platform } = runtime;
   const bundleDirectory = await resolveHelperRendererBundleDirectory();
   const [source, manifestText, discovery] = await Promise.all([
     readFile(resolve(bundleDirectory, "goal-progress.js"), "utf8"),
@@ -369,7 +360,7 @@ export async function connectHelperRendererTargetSource(
           {
             port: state.port,
             bundle,
-            platform: "macos",
+            platform,
             appVersion: app.shortVersion,
             onUiIntent: (threadId, intent) => viewClient.applyUiIntent(threadId, intent),
             onUpdateIntent: (threadId, intent) => viewClient.applyUpdateIntent(threadId, intent),
@@ -378,7 +369,9 @@ export async function connectHelperRendererTargetSource(
             onDisconnected: (code) => viewClient.reportDisconnected(target.id, code),
             environment: {
               appPath: app.realAppPath,
-              appSignatureValid: app.signatureValid,
+              ...(app.signatureValid === undefined
+                ? {}
+                : { appSignatureValid: app.signatureValid }),
             },
           },
           target,

@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { decideCodexCdpRestart } from "../platform/macos/src/cdp-controller.js";
+import { setupPolicySha256, setupPolicySourceFiles } from "../runtime/setup-policy.mjs";
 import { ensureSourceCdp } from "../platform/macos/src/source-cdp-policy.js";
 
 test("automatic setup cannot schedule restart for missing CDP; explicit setup may", async () => {
@@ -55,16 +56,22 @@ test("actual bootstrap sends restart approval only for explicitly flagged prepar
       join(fixture, ".codex-plugin/plugin.json"),
       JSON.stringify({ name: "codex-goal-progress", version: "0.3.7" }),
     );
-    await mkdir(join(runtime, "source/packages/store/src"), { recursive: true });
-    await mkdir(join(runtime, "source/platform/macos/src"), { recursive: true });
+    await mkdir(join(fixture, "packages/store/src"), { recursive: true });
     await cp(
       "packages/store/src/socket-path.cjs",
-      join(runtime, "source/packages/store/src/socket-path.cjs"),
+      join(fixture, "packages/store/src/socket-path.cjs"),
     );
-    await cp(
-      "platform/macos/src/source-cdp-policy.ts",
-      join(runtime, "source/platform/macos/src/source-cdp-policy.ts"),
-    );
+    for (const file of setupPolicySourceFiles()) {
+      await mkdir(join(fixture, file, ".."), { recursive: true });
+      await cp(file, join(fixture, file));
+    }
+    await mkdir(join(fixture, "hooks/src"), { recursive: true });
+    await mkdir(join(runtime, "source"), { recursive: true });
+    await cp(join(fixture, "packages"), join(runtime, "source/packages"), { recursive: true });
+    await cp(join(fixture, "platform"), join(runtime, "source/platform"), { recursive: true });
+    // A stale packaged mirror must not override the checkout source fingerprint.
+    await writeFile(join(runtime, "source", setupPolicySourceFiles()[0]), "stale packaged policy");
+    await cp("runtime/setup-policy.mjs", join(runtime, "setup-policy.mjs"));
     await cp("runtime/runtime-lock.mjs", join(runtime, "runtime-lock.mjs"));
     await cp("runtime/bootstrap.mjs", join(runtime, "bootstrap.mjs"));
     const data = join(fixture, "data");
@@ -73,7 +80,17 @@ test("actual bootstrap sends restart approval only for explicitly flagged prepar
     const log = join(fixture, "calls.txt");
     await writeFile(
       join(bin, "goal-progress"),
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GP_TEST_CALLS"\n',
+      [
+        '#!/bin/sh',
+        'printf "%s\\n" "$*" >> "$GP_TEST_CALLS"',
+        'if [ "$1" = __source-runtime-ensure ] && [ -n "$GP_TEST_SETUP_RESULT" ]; then',
+        '  printf "%s\\n" "$GP_TEST_SETUP_RESULT"; exit "$GP_TEST_SETUP_EXIT"',
+        'fi',
+        'if [ "$1" = mcp-server ] && [ -n "$GP_TEST_MCP_ENTRY" ]; then',
+        '  exec "$GP_TEST_NODE" --import tsx "$GP_TEST_MCP_ENTRY"',
+        'fi',
+        '',
+      ].join("\n"),
       { mode: 0o700 },
     );
     await writeFile(join(bin, "goal-progress.cjs"), "// fixture helper\n");
@@ -98,11 +115,9 @@ test("actual bootstrap sends restart approval only for explicitly flagged prepar
         releaseVersion: "0.3.7",
         files,
         socketPolicySha256: await digest(
-          join(runtime, "source/packages/store/src/socket-path.cjs"),
+          join(fixture, "packages/store/src/socket-path.cjs"),
         ),
-        setupPolicySha256: await digest(
-          join(runtime, "source/platform/macos/src/source-cdp-policy.ts"),
-        ),
+        setupPolicySha256: setupPolicySha256(fixture),
       }),
     );
     const env = { ...process.env, GOAL_PROGRESS_PLUGIN_DATA: data, GP_TEST_CALLS: log };
@@ -123,6 +138,42 @@ test("actual bootstrap sends restart approval only for explicitly flagged prepar
       });
       assert.equal(result.status, 0, result.stderr);
       assert.equal(await readFile(log, "utf8"), expected);
+    }
+    // Run the actual MCP stdio entry after bootstrap accepts the setup result.
+    // UI absence is reported separately; a failed core setup must still block MCP.
+    for (const coreReady of [true, false]) {
+      await writeFile(log, "");
+      const setup = {
+        ok: coreReady,
+        code: coreReady ? "SETUP_CORE_READY" : "LINUX_HELPER_NOT_READY",
+        details: { helperReady: coreReady, cdpReady: false, uiError: "ENOENT: cdp.json" },
+      };
+      const result = spawnSync(process.execPath, [join(runtime, "bootstrap.mjs"), "mcp-server"], {
+        env: {
+          ...env,
+          GP_TEST_SETUP_RESULT: JSON.stringify(setup),
+          GP_TEST_SETUP_EXIT: coreReady ? "0" : "1",
+          GP_TEST_NODE: process.execPath,
+          GP_TEST_MCP_ENTRY: resolve("packages/mcp/src/index.ts"),
+        },
+        input: `${JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "initialize",
+          params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "bootstrap-test", version: "1" } },
+        })}\n`,
+        encoding: "utf8",
+        timeout: 10000,
+      });
+      assert.equal(result.status, coreReady ? 0 : 1, result.stderr);
+      assert.equal(await readFile(log, "utf8"), coreReady ? "__source-runtime-ensure\nmcp-server\n" : "__source-runtime-ensure\n");
+      if (coreReady) {
+        const replies = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+        assert.equal(replies.length, 1, "setup JSON must not corrupt the MCP stdio stream");
+        assert.equal(replies[0].id, 1);
+        assert.equal(replies[0].result.serverInfo.name, "codex-goal-progress");
+      } else {
+        assert.match(result.stderr, /GOAL_PROGRESS_SOURCE_SETUP_FAILED/u);
+        assert.equal(result.stdout, "");
+      }
     }
   } finally {
     await rm(fixture, { recursive: true, force: true });

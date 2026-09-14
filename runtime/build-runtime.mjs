@@ -3,6 +3,7 @@ import { chmod, copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/p
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { setupPolicySha256 } from "./setup-policy.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
@@ -39,7 +40,10 @@ await Promise.all([
 ]);
 
 const helperBundlePath = resolve(outputRoot, "bin/goal-progress.cjs");
-const cliEntryPath = resolve(sourceRoot, "platform/macos/src/cli.ts");
+const cliEntryPath = resolve(
+  sourceRoot,
+  process.platform === "linux" ? "platform/linux/src/cli.ts" : "platform/macos/src/cli.ts",
+);
 await build({
   absWorkingDir: sourceRoot,
   bundle: true,
@@ -149,9 +153,7 @@ const manifest = {
   socketPolicySha256: createHash("sha256")
     .update(await readFile(resolve(sourceRoot, "packages/store/src/socket-path.cjs")))
     .digest("hex"),
-  setupPolicySha256: createHash("sha256")
-    .update(await readFile(resolve(sourceRoot, "platform/macos/src/source-cdp-policy.ts")))
-    .digest("hex"),
+  setupPolicySha256: setupPolicySha256(sourceRoot),
   nodeVersion: process.version,
   builtAt: new Date().toISOString(),
   files,

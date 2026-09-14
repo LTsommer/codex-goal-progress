@@ -1,4 +1,4 @@
-export type CodexAnchorPlatform = "macos";
+export type CodexAnchorPlatform = "macos" | "linux";
 export type CodexHostPlatform = CodexAnchorPlatform | "windows";
 
 export type CodexAnchorSignal =
@@ -465,6 +465,15 @@ export const macosGoalRowV1Locator: CodexNativeGoalLocator = {
   },
 };
 
+// Linux uses the same semantic DOM probes. No Linux client version is marked
+// verified until real-client acceptance establishes the complete mount contract.
+export const linuxGoalRowV1Locator: CodexNativeGoalLocator = {
+  ...macosGoalRowV1Locator,
+  id: "linux-goal-row-v1",
+  platform: "linux",
+  verifiedVersions: new Set<string>(),
+};
+
 export class CodexNativeGoalLocatorRegistry {
   readonly #locators: readonly CodexNativeGoalLocator[];
 
@@ -492,5 +501,5 @@ export class CodexNativeGoalLocatorRegistry {
 }
 
 export function createDefaultCodexNativeGoalLocatorRegistry(): CodexNativeGoalLocatorRegistry {
-  return new CodexNativeGoalLocatorRegistry([macosGoalRowV1Locator]);
+  return new CodexNativeGoalLocatorRegistry([macosGoalRowV1Locator, linuxGoalRowV1Locator]);
 }

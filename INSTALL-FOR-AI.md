@@ -11,7 +11,11 @@ uname -s
 uname -m
 ```
 
-Continue when the results are `Darwin` and `arm64`.
+For `Linux` and `x86_64`, follow [the Linux source installation procedure](docs/LINUX.md)
+from this checkout. Do not download the macOS archive. Report file preparation, core health,
+UI verification and any authorized restart separately.
+
+Continue with the Release procedure below when the results are `Darwin` and `arm64`.
 
 ## Download and verify the Release
 

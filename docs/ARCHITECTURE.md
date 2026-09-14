@@ -34,6 +34,22 @@ Goal Progress Skill
 Helper is the only state writer. Core is the only progress calculator. Renderer displays the
 ViewModel.
 
+## Platform boundary
+
+The source runtime selects a CLI entry for the current OS. `platform/linux` owns Linux
+application identity, loopback socket verification, user-session discovery, service files,
+and desktop launch/restore. `platform/macos` retains its existing launchd, application
+signature, and startup-consent behavior. Renderer attachment selects the matching CDP
+validator; it does not load the Linux installation orchestrator. Linux CLI injects its
+source-plugin update policy into the existing Helper options.
+
+Core IPC readiness and renderer readiness are separate. A missing or delayed desktop
+connection must not prevent core task operations or orderly shutdown. Linux preparation
+writes installation files without launching the desktop; final Verify requires a real visible
+tracked task. Platform setup fingerprints cover each platform's source inputs, while the
+macOS fingerprint remains compatible. Checkout source is authoritative during development;
+installed plugins build from the generated `runtime/source` tree.
+
 ## Activation
 
 Select the **Goal Progress** Skill for a native Goal.

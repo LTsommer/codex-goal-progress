@@ -15,6 +15,14 @@ This page lists the published platform and runtime surfaces.
 | IPC | protocol v4 |
 | Renderer UI intent | protocol v2 |
 
+## Linux source support
+
+This checkout also supports Linux x86_64 with Node.js 22.12+, a systemd user manager,
+and the verified packaged ChatGPT/Codex application layout. It does not provide a Linux
+desktop application or a prebuilt Linux Helper release. See [Linux](LINUX.md) for
+installation and separate core/UI acceptance. Linux native Goal versions remain unverified
+until real-client acceptance; shared DOM probes do not establish compatibility by themselves.
+
 ## Interface adaptation
 
 | Capability | Behavior |

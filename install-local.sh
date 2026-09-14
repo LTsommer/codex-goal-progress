@@ -6,6 +6,9 @@ PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 export PATH
 
 gp_repo=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ "$(uname -s)" = Linux ]; then
+  exec /bin/sh "$gp_repo/install-linux.sh" "$@"
+fi
 gp_home=${CODEX_HOME:-"$HOME/.codex"}
 gp_marketplace=codex-goal-progress-local
 export GOAL_PROGRESS_PLUGIN_DATA="$gp_home/plugins/data/codex-goal-progress-$gp_marketplace"
