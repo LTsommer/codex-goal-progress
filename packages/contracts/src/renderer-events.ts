@@ -8,6 +8,7 @@ export const GOAL_PROGRESS_SET_COLLAPSED_EVENT = "goal-progress-set-collapsed";
 export const GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT = "goal-progress-set-motion-paused";
 export const GOAL_PROGRESS_SET_PLACEMENT_EVENT = "goal-progress-set-placement";
 export const GOAL_PROGRESS_SET_FLOATING_X_RATIO_EVENT = "goal-progress-set-floating-x-ratio";
+export const GOAL_PROGRESS_SET_ACCENT_EVENT = "goal-progress-set-accent";
 export const GOAL_PROGRESS_REQUEST_RETRY_EVENT = "goal-progress-request-retry";
 export const GOAL_PROGRESS_REQUEST_DETACH_EVENT = "goal-progress-request-detach";
 export const GOAL_PROGRESS_LAYOUT_OFFSET_EVENT = "goal-progress-layout-offset";

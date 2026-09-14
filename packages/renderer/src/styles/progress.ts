@@ -101,6 +101,18 @@ export const progressStyles = css`
       transition: width 650ms cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
+    :host([accent="rainbow"]) .overall-fill {
+      background: var(--gp-palette-rainbow);
+    }
+
+    :host([accent="rainbow"]) .overall-percent {
+      background: var(--gp-palette-rainbow);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+    }
+
     .overall-fill::before {
       position: absolute;
       z-index: 2;

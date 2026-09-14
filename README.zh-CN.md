@@ -115,6 +115,43 @@ sh ./install-claude.sh
 安装时的重启授权只对当次安装生效。MCP、Hook 和对话恢复不会自行重启 Codex。
 CDP 暂时不可用时，Helper 和进度工具仍可读写记录；界面连接状态单独报告。
 
+#### 重装当前工作区的本地改动（Linux）
+
+这一流程用于已经安装过同名插件、需要验证**未提交**的本地源码。不要使用通用插件
+cachebuster：本项目的 plugin、runtime 和 source bundle 版本必须保持一致。先完成构建：
+
+```sh
+node scripts/build_renderer_bundle.mjs
+node scripts/build_plugin_package.mjs
+```
+
+用 `codex plugin list --json` 确认 `codex-goal-progress@codex-goal-progress-local` 的 marketplace
+来源。如果它仍指向 Git 或其他目录，先用 CLI 切换到当前工作区（只移除 marketplace 配置记录和
+插件缓存，不删除工作区）：
+
+```sh
+codex plugin marketplace remove codex-goal-progress-local --json
+codex plugin marketplace add "$PWD" --json
+codex plugin remove codex-goal-progress@codex-goal-progress-local --json
+codex plugin add codex-goal-progress@codex-goal-progress-local --json
+```
+
+随后从当前工作区重建受管 runtime；先检查 core，不重启桌面：
+
+```sh
+export GOAL_PROGRESS_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+export GOAL_PROGRESS_PLUGIN_MARKETPLACE=codex-goal-progress-local
+export GOAL_PROGRESS_PLUGIN_DATA="$GOAL_PROGRESS_CODEX_HOME/plugins/data/codex-goal-progress-codex-goal-progress-local"
+sh ./runtime/run-bootstrap.sh install-files --rebuild
+sh ./runtime/run-bootstrap.sh prepare
+sh ./runtime/run-bootstrap.sh doctor
+```
+
+仅在用户明确授权后，执行一次 `sh ./runtime/run-bootstrap.sh prepare --restart-codex`。不要因
+systemd 正在停止旧 Helper 而反复重启；等待命令的最终结果。重启后新开 Codex 线程，选择
+**Goal Progress** Skill 或输入 `$codex-goal-progress:goal-progress`；`/goal` 是 Codex 原生命令，
+不是插件入口。激活真实任务后再运行 `sh ./runtime/run-bootstrap.sh verify`。
+
 ### 更新或重启后的自动恢复
 
 源码插件默认关闭自动启动接管。需要在 Codex 更新或普通重启后自动恢复进度界面时，

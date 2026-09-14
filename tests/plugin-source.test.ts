@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { cp, mkdtemp, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { createGoalProgressRendererBundle } from "../packages/codex-adapter/src/renderer-bundle.js";
 import { setupPolicySha256, setupPolicySourceFiles } from "../runtime/setup-policy.mjs";
 import { buildPluginPackage } from "../scripts/build_plugin_package.mjs";
 
@@ -50,6 +51,11 @@ test("generated plugin has complete canonical source and builds Linux CLI withou
     assert.equal(build.status, 0, build.stderr);
     const manifest = JSON.parse(await readFile(join(output, "manifest.json"), "utf8"));
     assert.equal(manifest.setupPolicySha256, setupPolicySha256(packagedSource, "linux"));
+    const rendererSource = await readFile(join(output, "renderer/goal-progress.js"), "utf8");
+    const rendererManifest = JSON.parse(
+      await readFile(join(output, "renderer/goal-progress.manifest.json"), "utf8"),
+    );
+    assert.doesNotThrow(() => createGoalProgressRendererBundle(rendererSource, rendererManifest));
     const cli = spawnSync(
       process.execPath,
       [join(output, "bin/goal-progress.cjs"), "__read-only-cli-check"],

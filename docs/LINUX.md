@@ -37,6 +37,35 @@ sh ./runtime/run-bootstrap.sh prepare --restart-codex
 
 This permits a graceful restart when required and reuses an already verified managed instance. It does not force-kill an unresponsive app. Reopening the managed icon focuses the existing instance and forwards URL/file arguments. Starting the system executable directly bypasses managed startup.
 
+## Reinstalling changed local source
+
+Use this flow when testing uncommitted changes in an existing checkout. Build the renderer and source
+package first:
+
+```sh
+node scripts/build_renderer_bundle.mjs
+node scripts/build_plugin_package.mjs
+```
+
+Do not use a generic plugin cachebuster: this source plugin intentionally keeps its plugin, runtime,
+and source-bundle versions aligned. Check `codex plugin list --json`. If the configured
+`codex-goal-progress-local` marketplace points at another source, switch it through the CLI, then
+replace only the installed plugin cache:
+
+```sh
+codex plugin marketplace remove codex-goal-progress-local --json
+codex plugin marketplace add "$PWD" --json
+codex plugin remove codex-goal-progress@codex-goal-progress-local --json
+codex plugin add codex-goal-progress@codex-goal-progress-local --json
+```
+
+These commands do not delete the checkout. From that checkout, set the source context shown above and
+run `install-files --rebuild`, followed by `prepare` and `doctor`. Obtain a separate explicit user
+authorization before one `prepare --restart-codex`; wait for its final result instead of issuing
+another restart while systemd stops the old Helper. After the desktop opens, use a new Codex thread
+and select **Goal Progress** or enter `$codex-goal-progress:goal-progress`. The native `/goal`
+command is not this plugin. Final `verify` still requires an active, visible tracked task.
+
 The Helper service receives its session bus location from logind with ownership and permission checks. Desktop launches inherit the actual graphical session environment. Session-bus discovery does not replace display or input-method configuration.
 
 ## Verification

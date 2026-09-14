@@ -51,6 +51,7 @@ const { resolveHelperSocketPath } = createRequire(import.meta.url)(socketPolicyP
 const minimumNode = [22, 12, 0];
 const requiredPnpmMajor = 11;
 const buildWaitMs = 20 * 60 * 1000;
+const sourceSetupTimeoutMs = 150_000;
 
 function errorCode(error) {
   if (error instanceof Error && error.message.trim()) {
@@ -524,7 +525,7 @@ async function ensureSourceSetup(root, restartCodex = false) {
       {
         encoding: "utf8",
         env: runtimeEnvironment(root),
-        timeout: 120_000,
+        timeout: sourceSetupTimeoutMs,
         maxBuffer: 4 * 1024 * 1024,
       },
     );

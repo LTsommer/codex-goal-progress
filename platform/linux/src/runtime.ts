@@ -38,9 +38,12 @@ export {
   verifyLinuxCdpRuntime,
 } from "./cdp-runtime.js";
 export {
+  LINUX_SYSTEMD_COMMAND_TIMEOUT_MS,
+  LINUX_SYSTEMD_RESTART_TIMEOUT_MS,
   type LinuxRuntimeResult,
   linuxSystemdQuote,
   prepareLinuxSourceRuntime,
+  systemctlTimeoutMs,
   uninstallLinuxSourceRuntime,
 } from "./source-installation.js";
 

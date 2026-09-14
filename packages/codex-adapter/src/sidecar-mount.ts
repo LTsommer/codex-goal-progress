@@ -6,12 +6,14 @@ import {
   GOAL_PROGRESS_LAYOUT_OFFSET_EVENT,
   GOAL_PROGRESS_REQUEST_DETACH_EVENT,
   GOAL_PROGRESS_REQUEST_RETRY_EVENT,
+  GOAL_PROGRESS_SET_ACCENT_EVENT,
   GOAL_PROGRESS_SET_COLLAPSED_EVENT,
   GOAL_PROGRESS_SET_FLOATING_X_RATIO_EVENT,
   GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT,
   GOAL_PROGRESS_SET_PLACEMENT_EVENT,
 } from "../../contracts/src/renderer-events.js";
 import type {
+  GoalProgressAccent,
   GoalProgressUiIntent,
   GoalProgressUiPreference,
 } from "../../contracts/src/ui-preference.js";
@@ -47,6 +49,7 @@ export {
   GOAL_PROGRESS_ELEMENT_NAME,
   GOAL_PROGRESS_REQUEST_DETACH_EVENT,
   GOAL_PROGRESS_REQUEST_RETRY_EVENT,
+  GOAL_PROGRESS_SET_ACCENT_EVENT,
   GOAL_PROGRESS_SET_COLLAPSED_EVENT,
   GOAL_PROGRESS_SET_FLOATING_X_RATIO_EVENT,
   GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT,
@@ -126,6 +129,7 @@ interface GoalProgressHostElement extends HTMLElement {
   viewModel: GoalProgressViewModel | null;
   updateState: GoalProgressUpdateState | null;
   collapsed: boolean;
+  accent: GoalProgressAccent;
   readonly expandedLayoutOffset?: number;
   floatingCenterAvailable: boolean;
   floatingPanelConstrained: boolean;
@@ -383,6 +387,18 @@ export class SidecarMountController {
     }
   };
 
+  readonly #onAccent = (event: Event): void => {
+    const parsed = parseSidecarUiIntent(event);
+    if (parsed?.intent.type === "setAccent") {
+      const host = this.#host;
+      if (!host) {
+        return;
+      }
+      host.accent = parsed.intent.accent;
+      this.#emitUiIntent(parsed.intent);
+    }
+  };
+
   readonly #onPlacement = (event: Event): void => {
     const parsed = parseSidecarUiIntent(event);
     if (parsed?.intent.type === "setPlacement") {
@@ -626,6 +642,7 @@ export class SidecarMountController {
       }
       host.collapsed = preserveVisibleCollapsed ? visibleCollapsed : uiPreference.collapsed;
       host.motionPaused = uiPreference.motionPaused;
+      host.accent = uiPreference.accent;
       host.hidden = uiPreference.hidden;
       host.requestedPlacement = requestedPlacement;
       host.placement =
@@ -696,6 +713,7 @@ export class SidecarMountController {
     host.updateState = updateState ?? null;
     if (uiPreference) {
       host.motionPaused = uiPreference.motionPaused;
+      host.accent = uiPreference.accent;
       host.hidden = uiPreference.hidden;
     }
     this.#continuityModeActive = true;
@@ -778,6 +796,7 @@ export class SidecarMountController {
         : "preference-expanded";
       host.collapsed = preserveVisibleCollapsed ? visibleCollapsed : uiPreference.collapsed;
       host.motionPaused = uiPreference.motionPaused;
+      host.accent = uiPreference.accent;
       host.hidden = uiPreference.hidden;
       host.requestedPlacement = uiPreference.placement;
       host.floatingXRatio = this.#requestedFloatingXRatio;
@@ -959,6 +978,7 @@ export class SidecarMountController {
     if (this.#onUiIntent) {
       this.#document.addEventListener("click", this.#onDocumentClick, true);
       host.addEventListener(GOAL_PROGRESS_SET_COLLAPSED_EVENT, this.#onCollapsed);
+      host.addEventListener(GOAL_PROGRESS_SET_ACCENT_EVENT, this.#onAccent);
       host.addEventListener(GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT, this.#onMotionPaused);
       host.addEventListener(GOAL_PROGRESS_REQUEST_RETRY_EVENT, this.#onRetry);
       host.addEventListener(GOAL_PROGRESS_REQUEST_DETACH_EVENT, this.#onDetach);
@@ -1876,6 +1896,7 @@ export class SidecarMountController {
     if (this.#onUiIntent) {
       this.#document.removeEventListener("click", this.#onDocumentClick, true);
       host.removeEventListener(GOAL_PROGRESS_SET_COLLAPSED_EVENT, this.#onCollapsed);
+      host.removeEventListener(GOAL_PROGRESS_SET_ACCENT_EVENT, this.#onAccent);
       host.removeEventListener(GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT, this.#onMotionPaused);
       host.removeEventListener(GOAL_PROGRESS_REQUEST_RETRY_EVENT, this.#onRetry);
       host.removeEventListener(GOAL_PROGRESS_REQUEST_DETACH_EVENT, this.#onDetach);

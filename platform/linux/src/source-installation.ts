@@ -11,6 +11,8 @@ import { createManagedDesktopEntry, desktopExecQuote } from "./desktop-entry.js"
 import { linuxUserSessionEnvironment } from "./user-session.js";
 
 export const SERVICE = "codex-goal-progress.service";
+export const LINUX_SYSTEMD_COMMAND_TIMEOUT_MS = 15_000;
+export const LINUX_SYSTEMD_RESTART_TIMEOUT_MS = 105_000;
 const fail = (code: string): never => {
   throw new Error(code);
 };
@@ -50,10 +52,16 @@ export function configuration() {
     paths: resolveGoalProgressPaths({ root }),
   };
 }
+export function systemctlTimeoutMs(args: readonly string[]): number {
+  return args[0] === "restart"
+    ? LINUX_SYSTEMD_RESTART_TIMEOUT_MS
+    : LINUX_SYSTEMD_COMMAND_TIMEOUT_MS;
+}
+
 export function systemctl(args: string[]): string {
   const result = spawnSync("systemctl", ["--user", ...args], {
     encoding: "utf8",
-    timeout: 15000,
+    timeout: systemctlTimeoutMs(args),
     env: linuxUserSessionEnvironment(),
   });
   if (result.status !== 0)

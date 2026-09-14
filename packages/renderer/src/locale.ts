@@ -30,6 +30,7 @@ export interface GoalProgressMessages {
   readonly displaySettings: string;
   readonly versionSection: string;
   readonly effects: string;
+  readonly accentColor?: string;
   readonly animationEffects: string;
   readonly fixedDisplay: string;
   readonly floatingDisplay: string;

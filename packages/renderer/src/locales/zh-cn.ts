@@ -30,6 +30,7 @@ export const zhCNMessages: GoalProgressMessages = {
   displaySettings: "显示",
   versionSection: "版本",
   effects: "效果",
+  accentColor: "颜色",
   animationEffects: "动画效果",
   fixedDisplay: "固定显示",
   floatingDisplay: "浮动显示",

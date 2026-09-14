@@ -16,10 +16,21 @@ import {
   inspectLinuxSourceRuntime,
   linuxListenerInodes,
   linuxSystemdQuote,
+  LINUX_SYSTEMD_COMMAND_TIMEOUT_MS,
+  LINUX_SYSTEMD_RESTART_TIMEOUT_MS,
   parseLinuxProcessStat,
   prepareLinuxSourceRuntime,
+  systemctlTimeoutMs,
   withLinuxRuntimeOperation,
 } from "../platform/linux/src/runtime.js";
+
+test("Linux systemd grants restart enough time for the service stop budget", () => {
+  assert.equal(LINUX_SYSTEMD_COMMAND_TIMEOUT_MS, 15_000);
+  assert.equal(LINUX_SYSTEMD_RESTART_TIMEOUT_MS, 105_000);
+  assert.ok(LINUX_SYSTEMD_RESTART_TIMEOUT_MS > 90_000);
+  assert.equal(systemctlTimeoutMs(["show-environment"]), LINUX_SYSTEMD_COMMAND_TIMEOUT_MS);
+  assert.equal(systemctlTimeoutMs(["restart", "codex-goal-progress.service"]), LINUX_SYSTEMD_RESTART_TIMEOUT_MS);
+});
 
 // Uses the real Linux flock executable for install/uninstall operation serialization.
 test("Linux setup prepares owned files without starting services; missing CDP remains a failure", {

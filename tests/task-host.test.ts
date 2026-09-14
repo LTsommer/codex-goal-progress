@@ -7,6 +7,7 @@ import { GoalProgressHelper } from "../packages/host/src/index.js";
 import { GoalProgressIpcClient } from "../packages/ipc/src/index.js";
 import {
   GoalEventStore,
+  readGoalProgressUiPreference,
   resolveGoalProgressPaths,
   resolveGoalProgressSessionPaths,
 } from "../packages/store/src/index.js";
@@ -170,6 +171,12 @@ test("ordinary task survives turns and restart without consulting native Goal", 
     assert.equal(resumedHook.result.status, "active");
     assert.equal(nativeReads, 0);
     const cdp = new GoalProgressIpcClient(paths.helperSocketPath, { clientKind: "cdp" });
+    const accentChanged = await cdp.request({
+      method: "ui.intent",
+      params: { sessionId: "thread-a", intent: { type: "setAccent", accent: "rainbow" } },
+    });
+    assert.equal(accentChanged.result.uiPreference.accent, "rainbow");
+    assert.equal((await readGoalProgressUiPreference(paths)).accent, "rainbow");
     await cdp.request({
       method: "ui.intent",
       params: { sessionId: "thread-a", intent: { type: "requestDetach" } },

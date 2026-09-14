@@ -9,9 +9,11 @@ import {
   GOAL_PROGRESS_UI_INTENT_PROTOCOL_VERSION,
   type GoalProgressUiIntentEnvelope,
 } from "../../contracts/src/renderer-events.js";
-import type {
-  GoalProgressUiIntent,
-  GoalProgressUiPreference,
+import {
+  DEFAULT_GOAL_PROGRESS_UI_PREFERENCE,
+  type GoalProgressUiIntent,
+  type GoalProgressUiPreference,
+  migrateGoalProgressUiPreference,
 } from "../../contracts/src/ui-preference.js";
 import type {
   GoalProgressUpdateIntent,
@@ -159,47 +161,8 @@ const trackingPhases = new Set([
   "detached",
 ]);
 
-const defaultUiPreference: GoalProgressUiPreference = {
-  schemaVersion: 2,
-  collapsed: false,
-  motionPaused: false,
-  hidden: false,
-  placement: "inline",
-  floatingXRatio: 0.5,
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseUiPreference(value: unknown): GoalProgressUiPreference | null {
-  if (
-    !isRecord(value) ||
-    typeof value.collapsed !== "boolean" ||
-    typeof value.motionPaused !== "boolean" ||
-    typeof value.hidden !== "boolean"
-  ) {
-    return null;
-  }
-  if (value.schemaVersion === 1) {
-    return {
-      ...defaultUiPreference,
-      collapsed: value.collapsed,
-      motionPaused: value.motionPaused,
-      hidden: value.hidden,
-    };
-  }
-  if (
-    value.schemaVersion !== 2 ||
-    (value.placement !== "inline" && value.placement !== "floating") ||
-    typeof value.floatingXRatio !== "number" ||
-    !Number.isFinite(value.floatingXRatio) ||
-    value.floatingXRatio < 0 ||
-    value.floatingXRatio > 1
-  ) {
-    return null;
-  }
-  return value as GoalProgressUiPreference;
 }
 
 function applyLocalUiIntent(
@@ -217,6 +180,9 @@ function applyLocalUiIntent(
   }
   if (intent.type === "setFloatingXRatio") {
     return { ...preference, floatingXRatio: intent.floatingXRatio };
+  }
+  if (intent.type === "setAccent") {
+    return { ...preference, accent: intent.accent };
   }
   return preference;
 }
@@ -253,7 +219,9 @@ function parseMountInput(value: unknown): GoalProgressPageMountInput | null {
   const bridgeNonce = value.bridgeNonce;
   const bridgeBindingName = value.bridgeBindingName;
   const uiPreference =
-    value.uiPreference === undefined ? defaultUiPreference : parseUiPreference(value.uiPreference);
+    value.uiPreference === undefined
+      ? DEFAULT_GOAL_PROGRESS_UI_PREFERENCE
+      : migrateGoalProgressUiPreference(value.uiPreference);
   const updateState =
     value.updateState === null || value.updateState === undefined
       ? null

@@ -1,11 +1,15 @@
 import {
   GOAL_PROGRESS_LAYOUT_OFFSET_EVENT,
+  GOAL_PROGRESS_SET_ACCENT_EVENT,
   GOAL_PROGRESS_SET_COLLAPSED_EVENT,
   GOAL_PROGRESS_SET_FLOATING_X_RATIO_EVENT,
   GOAL_PROGRESS_SET_MOTION_PAUSED_EVENT,
   GOAL_PROGRESS_SET_PLACEMENT_EVENT,
 } from "../../contracts/src/renderer-events.js";
-import type { GoalProgressUiIntent } from "../../contracts/src/ui-preference.js";
+import {
+  GOAL_PROGRESS_ACCENTS,
+  type GoalProgressUiIntent,
+} from "../../contracts/src/ui-preference.js";
 
 const GOAL_PROGRESS_MAX_EXPANDED_OFFSET_PX = 1_200;
 
@@ -42,10 +46,24 @@ function floatingXRatioDetail(event: Event): number | null {
     : null;
 }
 
+function accentDetail(
+  event: Event,
+): Extract<GoalProgressUiIntent, { type: "setAccent" }>["accent"] | null {
+  const detail = eventDetail(event);
+  if (detail === null || typeof detail !== "object" || Array.isArray(detail)) {
+    return null;
+  }
+  const value = (detail as Record<string, unknown>).accent;
+  return typeof value === "string" && (GOAL_PROGRESS_ACCENTS as readonly string[]).includes(value)
+    ? (value as Extract<GoalProgressUiIntent, { type: "setAccent" }>["accent"])
+    : null;
+}
+
 export type ParsedSidecarUiIntent =
   | { readonly intent: Extract<GoalProgressUiIntent, { type: "setCollapsed" }> }
   | { readonly intent: Extract<GoalProgressUiIntent, { type: "setMotionPaused" }> }
   | { readonly intent: Extract<GoalProgressUiIntent, { type: "setPlacement" }> }
+  | { readonly intent: Extract<GoalProgressUiIntent, { type: "setAccent" }> }
   | {
       readonly intent: Extract<GoalProgressUiIntent, { type: "setFloatingXRatio" }>;
       readonly commit: boolean;
@@ -63,6 +81,10 @@ export function parseSidecarUiIntent(event: Event): ParsedSidecarUiIntent | null
   if (event.type === GOAL_PROGRESS_SET_PLACEMENT_EVENT) {
     const placement = placementDetail(event);
     return placement === null ? null : { intent: { type: "setPlacement", placement } };
+  }
+  if (event.type === GOAL_PROGRESS_SET_ACCENT_EVENT) {
+    const accent = accentDetail(event);
+    return accent === null ? null : { intent: { type: "setAccent", accent } };
   }
   if (event.type === GOAL_PROGRESS_SET_FLOATING_X_RATIO_EVENT) {
     const floatingXRatio = floatingXRatioDetail(event);
