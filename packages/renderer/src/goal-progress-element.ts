@@ -18,6 +18,7 @@ import {
   GOAL_PROGRESS_UPDATE_INTENT_EVENT,
   isGoalProgressUpdateVersion,
 } from "../../contracts/src/update-state-runtime.js";
+import { renderGlassRefraction } from "./components/glass-refraction.js";
 import { renderErrorView, renderPreparingView } from "./components/states.js";
 import { renderTrackingView } from "./components/tracking.js";
 import { DisplaySettingsMenuController } from "./display-settings-menu-controller.js";
@@ -517,6 +518,7 @@ export class GoalProgressElement extends LitElement {
       isGoalProgressUpdateVersion(latestVersion) &&
       latestVersion === this.updateState?.promptDismissedForVersion;
     return html`<section class="panel phase-${viewModel.trackingPhase} placement-${this.placement}">
+      ${renderGlassRefraction()}
       ${renderTrackingView(viewModel, {
         collapsed: this.collapsed,
         accent: this.accent,

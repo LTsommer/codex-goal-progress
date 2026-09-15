@@ -1,4 +1,5 @@
 import { css } from "lit";
+import { GLASS_LENSES } from "../components/glass-refraction.js";
 
 export const progressStyles = css`
     .overall {
@@ -72,7 +73,7 @@ export const progressStyles = css`
 
     .overall-track {
       position: relative;
-      height: 8.1px;
+      height: 10px;
       border-radius: 999px;
       background: linear-gradient(
         180deg,
@@ -160,22 +161,31 @@ export const progressStyles = css`
       will-change: transform, opacity;
     }
 
-    .frontier {
+    .frontier,
+    .mini-frontier {
       position: absolute;
       z-index: 5;
       top: 50%;
       left: var(--progress);
-      width: 13px;
-      height: 13px;
-      border: 1px solid var(--gp-frontier-border);
-      border-radius: 50%;
-      background: var(--gp-frontier);
-      box-shadow:
-        0 0 0 3px var(--gp-frontier-ring),
-        0 0 14px var(--gp-frontier-glow),
-        0 3px 9px var(--gp-frontier-shadow);
+      width: ${GLASS_LENSES.overall.width}px;
+      height: ${GLASS_LENSES.overall.height}px;
+      border: 1px solid color-mix(in srgb, var(--gp-accent) 46%, var(--gp-glass-edge));
+      border-radius: 999px;
+      background-color: var(--gp-handle-surface);
+      background-image: var(--gp-handle-sheen);
+      -webkit-backdrop-filter: var(--gp-handle-filter, url(#gp-progress-refraction));
+      backdrop-filter: var(--gp-handle-filter, url(#gp-progress-refraction));
+      box-shadow: var(--gp-handle-shadow);
       transform: translate(-50%, -50%);
       pointer-events: none;
+    }
+
+    .mini-frontier {
+      width: ${GLASS_LENSES.mini.width}px;
+      height: ${GLASS_LENSES.mini.height}px;
+      left: clamp(${GLASS_LENSES.mini.width / 2}px, var(--progress), calc(100% - ${GLASS_LENSES.mini.width / 2}px));
+      -webkit-backdrop-filter: var(--gp-handle-filter, url(#gp-mini-progress-refraction));
+      backdrop-filter: var(--gp-handle-filter, url(#gp-mini-progress-refraction));
     }
 
     .sparkle-field {

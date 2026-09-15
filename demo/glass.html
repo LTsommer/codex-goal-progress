@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>清透玻璃 · 真实组件预览</title>
+<style>
+body{margin:0;font:15px system-ui;background:#f7f7f8;color:#242933}header{padding:22px 28px;display:flex;gap:20px;align-items:baseline;flex-wrap:wrap}h1{font-size:22px;margin:0}p{margin:0;color:#596474}a{color:#246ac1}.themes{display:grid;grid-template-columns:1fr 1fr}.theme h2{font-size:14px;font-weight:500;padding:12px 24px;margin:0}.theme:first-child{background:#181b20;color:#eee}iframe{display:block;width:100%;height:630px;border:0}details{padding:22px}summary{cursor:pointer}img{width:100%;height:auto;display:block;margin-top:20px}@media(max-width:700px){.themes{grid-template-columns:1fr}iframe{height:610px}}
+</style>
+<header><h1>清透玻璃</h1><p>真实组件 · 示例数据</p><a href="task.html?mode=glass">交互与状态检查</a></header>
+<div class="themes">
+<section class="theme"><h2>深色</h2><iframe title="深色组件" src="task.html?mode=glass&theme=dark&preview=1"></iframe></section>
+<section class="theme"><h2>浅色</h2><iframe title="浅色组件" src="task.html?mode=glass&theme=light&preview=1"></iframe></section>
+</div>
+<details><summary>检查 400px 窄窗口与 20px 字体</summary><iframe id="narrow" title="窄窗口大字体" style="width:400px;max-width:100%;height:900px" src="task.html?mode=glass&theme=light&font=20&preview=1"></iframe></details>
+</html>

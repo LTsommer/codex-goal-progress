@@ -44,15 +44,39 @@ export const codexThemeTokenStyles = css`
       --gp-panel-raised: var(--codex-base-surface, var(--gp-panel));
       --gp-panel-glass: color-mix(
         in oklab,
-        var(--color-background-primary-soft, var(--gp-panel)) 70%,
+        var(--color-background-primary-soft, var(--gp-panel)) 28%,
         transparent
       );
-      --gp-panel-glass-compensation: color-mix(
-        in oklab,
-        var(--color-background-primary-soft, var(--gp-panel)) 14%,
-        transparent
+      --gp-chip-glass: color-mix(in oklab, var(--gp-panel) 18%, transparent);
+      --gp-menu-glass: color-mix(in oklab, var(--gp-panel-raised) 76%, transparent);
+      --gp-backdrop-blur: 8px;
+      --gp-glass-filter: blur(var(--gp-backdrop-blur)) saturate(1.12);
+      --gp-glass-edge: color-mix(in srgb, var(--gp-text) 20%, transparent);
+      --gp-glass-sheen: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.12),
+        rgba(255, 255, 255, 0.02) 24%,
+        transparent 62%,
+        color-mix(in srgb, var(--gp-accent) 5%, transparent)
       );
-      --gp-backdrop-blur: var(--blur-sm, 8px);
+      --gp-glass-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.48),
+        inset 1px 0 0 rgba(255, 255, 255, 0.14),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+        inset -1px 0 0 color-mix(in srgb, var(--gp-accent) 12%, transparent),
+        0 8px 24px rgba(0, 0, 0, 0.1);
+      --gp-handle-surface: transparent;
+      --gp-handle-sheen: linear-gradient(
+        160deg,
+        rgba(255, 255, 255, 0.16),
+        transparent 28%,
+        transparent 76%,
+        rgba(255, 255, 255, 0.06)
+      );
+      --gp-handle-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.46),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+        0 1px 2px rgba(0, 0, 0, 0.16);
       --gp-text: var(
         --color-token-foreground,
         var(--color-token-text-primary, var(--gp-fallback-text))

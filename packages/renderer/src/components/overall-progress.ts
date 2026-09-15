@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { GoalProgressViewModel } from "../../../contracts/src/index.js";
 import type { GoalProgressMessages } from "../locale.js";
+import { GLASS_LENSES } from "./glass-refraction.js";
 import { renderParticles, renderSparkles } from "./motion-effects.js";
 import { taskLabels } from "./task.js";
 
@@ -68,7 +69,7 @@ export function renderOverallProgress(
             percent > 0
               ? html`<span
                 class="frontier"
-                style="--progress:clamp(7px, ${percent}%, calc(100% - 7px))"
+                style="--progress:clamp(${GLASS_LENSES.overall.width / 2}px, ${percent}%, calc(100% - ${GLASS_LENSES.overall.width / 2}px))"
                 aria-hidden="true"
               ></span>`
               : nothing

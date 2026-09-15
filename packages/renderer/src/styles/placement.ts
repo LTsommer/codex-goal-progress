@@ -32,17 +32,14 @@ export const placementStyles = css`
       width: min(170px, calc(100% - 20px));
       min-height: 36px;
       overflow: hidden;
-      border: 1px solid var(--gp-line);
+      border: 1px solid var(--gp-glass-edge);
       border-radius: 15px;
       padding: 0;
-      background-color: var(--gp-panel-glass);
-      background-image: linear-gradient(
-        var(--gp-panel-glass-compensation),
-        var(--gp-panel-glass-compensation)
-      );
-      -webkit-backdrop-filter: blur(var(--gp-backdrop-blur));
-      backdrop-filter: blur(var(--gp-backdrop-blur));
-      box-shadow: none;
+      background-color: var(--gp-chip-glass);
+      background-image: var(--gp-glass-sheen);
+      -webkit-backdrop-filter: var(--gp-glass-filter);
+      backdrop-filter: var(--gp-glass-filter);
+      box-shadow: var(--gp-glass-shadow);
       cursor: ew-resize;
       pointer-events: auto;
       touch-action: none;
@@ -85,22 +82,18 @@ export const placementStyles = css`
 
     .floating-chip .overall-track {
       overflow: visible;
-      height: 6px;
+      height: 10px;
       border-radius: 999px;
       background: var(--gp-track);
       box-shadow: none;
       transform: none;
     }
 
-    .floating-chip .overall-fill,
-    .floating-chip .frontier {
+    .floating-chip .overall-fill {
       box-shadow: none;
     }
 
     .floating-chip .frontier {
-      width: 13px;
-      height: 13px;
-      background: var(--gp-frontier);
       opacity: 1;
     }
 
@@ -132,16 +125,13 @@ export const placementStyles = css`
       left: var(--gp-floating-panel-center, 50%);
       width: min(620px, calc(100% - 20px));
       overflow: visible;
-      border: 1px solid var(--gp-line);
+      border: 1px solid var(--gp-glass-edge);
       border-radius: 14px;
       background-color: var(--gp-panel-glass);
-      background-image: linear-gradient(
-        var(--gp-panel-glass-compensation),
-        var(--gp-panel-glass-compensation)
-      );
-      -webkit-backdrop-filter: blur(var(--gp-backdrop-blur));
-      backdrop-filter: blur(var(--gp-backdrop-blur));
-      box-shadow: none;
+      background-image: var(--gp-glass-sheen);
+      -webkit-backdrop-filter: var(--gp-glass-filter);
+      backdrop-filter: var(--gp-glass-filter);
+      box-shadow: var(--gp-glass-shadow);
       cursor: ew-resize;
       pointer-events: auto;
       touch-action: none;

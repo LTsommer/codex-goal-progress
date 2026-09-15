@@ -85,7 +85,7 @@ export const objectiveStyles = css`
     }
 
     .objective-row[data-status="active"] {
-      --gp-objective-row-bg: color-mix(in srgb, var(--gp-text) 6%, transparent);
+      --gp-objective-row-bg: color-mix(in srgb, var(--gp-accent) 9%, transparent);
     }
 
     .objective-row > div:first-child {
@@ -218,9 +218,10 @@ export const objectiveStyles = css`
     }
 
     .mini-track {
-      overflow: hidden;
-      height: 3px;
-      margin-top: 8px;
+      position: relative;
+      overflow: visible;
+      height: 8px;
+      margin-top: 3px;
       margin-inline-start: calc(
         0px - var(--gp-objective-marker-size) - 4px - var(--gp-objective-main-inset) -
           var(--gp-mini-track-leading-extension)

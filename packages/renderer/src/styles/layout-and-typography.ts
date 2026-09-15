@@ -47,13 +47,10 @@ export const layoutAndTypographyStyles = css`
       border-top-width: 1px;
       border-radius: 0;
       background-color: var(--gp-panel-glass);
-      background-image: linear-gradient(
-        var(--gp-panel-glass-compensation),
-        var(--gp-panel-glass-compensation)
-      );
-      -webkit-backdrop-filter: blur(var(--gp-backdrop-blur));
-      backdrop-filter: blur(var(--gp-backdrop-blur));
-      box-shadow: none;
+      background-image: var(--gp-glass-sheen);
+      -webkit-backdrop-filter: var(--gp-glass-filter);
+      backdrop-filter: var(--gp-glass-filter);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
 
     .panel.phase-preparing,
@@ -61,12 +58,9 @@ export const layoutAndTypographyStyles = css`
       border-top-width: 1px;
       border-radius: 0;
       background-color: var(--gp-panel-glass);
-      background-image: linear-gradient(
-        var(--gp-panel-glass-compensation),
-        var(--gp-panel-glass-compensation)
-      );
-      -webkit-backdrop-filter: blur(var(--gp-backdrop-blur));
-      backdrop-filter: blur(var(--gp-backdrop-blur));
+      background-image: var(--gp-glass-sheen);
+      -webkit-backdrop-filter: var(--gp-glass-filter);
+      backdrop-filter: var(--gp-glass-filter);
       box-shadow: none;
     }
 
@@ -230,15 +224,14 @@ export const layoutAndTypographyStyles = css`
       display: grid;
       width: 180px;
       gap: 2px;
-      border: 1px solid color-mix(in srgb, var(--gp-line-strong) 72%, transparent);
+      border: 1px solid var(--gp-glass-edge);
       border-radius: 12px;
       padding: 6px;
-      background: color-mix(in srgb, var(--gp-panel-raised) 84%, transparent);
-      -webkit-backdrop-filter: blur(calc(var(--gp-backdrop-blur) + 6px)) saturate(1.2);
-      backdrop-filter: blur(calc(var(--gp-backdrop-blur) + 6px)) saturate(1.2);
-      box-shadow:
-        0 14px 34px var(--gp-panel-shadow),
-        inset 0 1px 0 color-mix(in srgb, var(--gp-text) 7%, transparent);
+      background-color: var(--gp-menu-glass);
+      background-image: var(--gp-glass-sheen);
+      -webkit-backdrop-filter: var(--gp-glass-filter);
+      backdrop-filter: var(--gp-glass-filter);
+      box-shadow: var(--gp-glass-shadow);
     }
 
     .placement-menu-title {

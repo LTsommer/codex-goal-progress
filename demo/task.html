@@ -6,11 +6,35 @@
 <title>普通任务进度 · 本地验收</title>
 <style>body{font:15px system-ui;margin:0;background:#f7f7f8;color:#222}main{max-width:780px;margin:8vh auto;padding:24px}h1{font-size:28px}p{line-height:1.7;color:#666}button,select{font:inherit;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:white;margin-right:8px}.composer{position:fixed;bottom:24px;left:15%;right:15%;min-height:85px;background:white;border:1px solid #ddd;border-radius:16px;padding:16px;box-sizing:border-box}.native-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}.native-row[hidden]{display:none}.native-row>button{width:65%;text-align:left}.native-row>div{display:flex}.native-row>div button{width:36px;padding:8px}.composer textarea{box-sizing:border-box;width:100%;resize:none;font:inherit;color:inherit;background:transparent;border:0;min-height:48px}#result{white-space:pre-wrap;font-size:12px}</style>
 </head>
+<style>
+:root{--codex-base-surface:#f7f7f8;--color-token-foreground:#242933;--color-token-text-secondary:#586273;--color-token-primary:#378cf3;--codex-chat-font-size:14px}
+:root[data-theme=dark]{color-scheme:dark;--codex-base-surface:#181b20;--color-token-foreground:#f0f2f5;--color-token-text-secondary:#b7bdc8}
+body{background:var(--codex-base-surface);color:var(--color-token-foreground)}
+main{position:relative;z-index:1;margin:24px auto;padding:16px;max-width:880px}
+p{color:var(--color-token-text-secondary)}
+button,select{background:var(--codex-base-surface);color:inherit;border-color:#8885}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.controls label{font-size:12px}
+.composer{left:8%;right:8%;background:var(--codex-base-surface);border-color:#8884;color:inherit}
+.backdrop{position:fixed;inset:30% 8% 155px;overflow:hidden;color:var(--color-token-text-secondary);opacity:.38;line-height:2.3;pointer-events:none}
+.backdrop p{margin:0 0 14px}.backdrop code{display:block;padding:12px;background:#8881;border-radius:8px}
+:root[data-background=false] .backdrop{display:none}
+:root[data-preview=true] main{display:none}
+:root[data-preview=true] .backdrop{top:6%}
+#result{font-size:11px;max-height:65px;overflow:auto}
+</style>
 <body>
 <main>
 <h1>无需 Goal，也能看见任务进展</h1>
 <p>本地样例通过真实 SidecarMountController 挂载真实 Lit 组件；普通任务没有原生 Goal 锚点，另有原生 Goal 回归样例。保存的布局偏好是 inline。切换状态检查探索与清单、暂停、完成及中英文显示。</p>
-<select id="mode">
+<div class="controls">
+<select id="mode" aria-label="预览状态">
+<option value="glass">清透玻璃参考</option>
+<option value="current">实际长标题对照</option>
+<option value="glass-1">清单进度 1%</option>
+<option value="glass-99">清单进度 99%</option>
+<option value="glass-0">清单进度 0%</option>
+<option value="glass-100">清单进度 100%</option>
 <option value="exploration">探索中</option>
 <option value="checklist">清单已明确</option>
 <option value="paused">已暂停</option>
@@ -19,9 +43,22 @@
 </select>
 <button type="button" id="locale">English / 中文</button>
 <button type="button" id="remount">首次挂载</button>
+<select id="theme" aria-label="主题"><option value="light">浅色</option><option value="dark">深色</option></select>
+<select id="font-size" aria-label="字体大小"><option value="14">14px</option><option value="11">11px</option><option value="16">16px</option><option value="20">20px</option></select>
+<label><input type="checkbox" id="background" checked>聊天背景</label>
+<label><input type="checkbox" id="refraction" checked>折射对照</label>
+</div>
 <pre id="result">
 </pre>
 </main>
+<section class="backdrop" aria-hidden="true">
+<p>正在整理当前任务的实现结果，核对模块之间的数据流与状态边界。</p>
+<code>const progress = await loadTask();<br>renderProgress(progress);</code>
+<p>已确认清单更新成功，正在检查深色与浅色主题下的视觉效果。</p>
+<p>背景中的文字会透过玻璃形成模糊轮廓，前景内容保持清晰。</p>
+<code>状态更新完成<br>当前任务 · 本地预览</code>
+<p>检查展开面板、进度指示块和设置菜单的交互。</p>
+</section>
 <div class="composer" data-codex-composer-root>
 <div id="native-goal" class="native-row" hidden>
 <button type="button" aria-label="Goal">
@@ -34,7 +71,7 @@
 <button type="button" aria-label="Goal menu">⋯</button>
 </div>
 </div>
-<textarea data-codex-composer readonly aria-label="普通对话输入框 · 样例不会发送消息">普通对话输入框 · 样例不会发送消息</textarea>
+<textarea role="textbox" data-codex-composer readonly aria-label="普通对话输入框 · 样例不会发送消息">普通对话输入框 · 样例不会发送消息</textarea>
 </div>
 <script type="module" src="../dist/demo/task-demo.js">
 </script>

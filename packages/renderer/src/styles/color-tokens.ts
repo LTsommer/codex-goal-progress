@@ -71,4 +71,33 @@ export const colorTokenStyles = css`
         --gp-frontier: color-mix(in oklab, var(--gp-panel-raised) 88%, white);
       }
     }
+
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      :host {
+        --gp-panel-glass: var(--gp-panel) !important;
+        --gp-chip-glass: var(--gp-panel) !important;
+        --gp-menu-glass: var(--gp-panel) !important;
+      }
+    }
+
+    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+      :host {
+        --gp-panel-glass: var(--gp-panel) !important;
+        --gp-chip-glass: var(--gp-panel) !important;
+        --gp-menu-glass: var(--gp-panel) !important;
+        --gp-glass-filter: none !important;
+        --gp-glass-sheen: none !important;
+        --gp-handle-surface: var(--gp-panel) !important;
+        --gp-handle-sheen: none !important;
+        --gp-handle-filter: none !important;
+      }
+    }
+
+    @media (forced-colors: active) {
+      :host {
+        --gp-panel: Canvas !important;
+        --gp-text: CanvasText !important;
+        --gp-glass-edge: CanvasText !important;
+      }
+    }
 `;

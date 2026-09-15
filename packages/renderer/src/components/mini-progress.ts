@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 import type { GoalProgressMessages } from "../locale.js";
 import type { GoalProgressObjectiveView } from "../view-labels.js";
 
@@ -21,6 +21,15 @@ export function renderMiniProgress(
         class="mini-fill"
         style="width:${objective.progressPercent}%;--sweep-delay:${delay.toFixed(2)}s"
       ></span>
+      ${
+        objective.progressPercent > 0 && objective.progressPercent < 100
+          ? html`<span
+              class="mini-frontier"
+              style="--progress:${objective.progressPercent}%"
+              aria-hidden="true"
+            ></span>`
+          : nothing
+      }
     </div>
   `;
 }
